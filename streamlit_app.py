@@ -6,7 +6,7 @@ import io
 from openpyxl.styles import Font, Alignment, PatternFill
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.6", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v2.7", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -24,8 +24,9 @@ st.markdown("""
         box-shadow: 2px 2px 8px rgba(0,0,0,0.05); margin-bottom: 15px; text-align: center;
     }
     .area-display {
-        background-color: #eeeeee; padding: 5px 10px; border-radius: 5px;
-        font-size: 14px; color: #555555; margin-top: -15px; margin-bottom: 10px;
+        background-color: #e3f2fd; padding: 5px 10px; border-radius: 5px;
+        font-size: 14px; color: #1565c0; margin-top: -15px; margin-bottom: 10px;
+        border-left: 3px solid #1565c0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -54,10 +55,11 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
         floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
         floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
         
-        # 基地面積 (坪) 並自動換算平方公尺
-        base_area_ping = st.number_input("基地面積 (坪)", min_value=1.0, value=500.0, step=10.0)
-        base_area_m2 = base_area_ping * 3.305785
-        st.markdown(f"<div class='area-display'>換算面積：{base_area_m2:,.2f} m²</div>", unsafe_allow_html=True)
+        # 基地面積輸入 (改為平方公尺)
+        base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
+        # 自動換算為坪 (1 m2 = 0.3025 坪)
+        base_area_ping = base_area_m2 * 0.3025
+        st.markdown(f"<div class='area-display'>換算面積：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
 st.subheader("📅 日期與排除條件 (非必要)")
 with st.expander("點擊展開/隱藏 日期設定"):
@@ -73,6 +75,7 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 # --- 5. 核心運算邏輯 ---
+# 計算時仍以「坪」為權重基準（延用原算法模型）
 area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95}
@@ -126,13 +129,14 @@ report_data = [
     ["建物類型", b_type],
     ["結構型式", b_struct],
     ["外牆型式", ext_wall],
-    ["基地面積 (坪)", f"{base_area_ping} 坪"],
     ["基地面積 (m2)", f"{base_area_m2:,.2f} m²"],
+    ["基地面積 (坪)", f"{base_area_ping:,.2f} 坪"],
     ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
     ["", ""],
     ["[ 估算結果 ]", ""],
     ["預計開工日期", str(start_date) if start_date else "未提供"],
     ["總需求工作天數", f"{total_work_days} 天"],
+    ["總日曆天數", f"{calendar_days} 天"],
     ["預計完工日期", str(calc_finish)]
 ]
 df = pd.DataFrame(report_data, columns=["參數項目", "詳細內容"])
