@@ -3,9 +3,9 @@ import datetime
 from datetime import timedelta
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v1.4", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v1.6", layout="wide")
 
-# --- 2. 色彩計劃 CSS (黃色 1235C / 橘紅 172U / 深灰 K85) ---
+# --- 2. 色彩計劃 CSS ---
 st.markdown("""
     <style>
     :root {
@@ -18,118 +18,109 @@ st.markdown("""
     .stButton>button { 
         background-color: var(--main-yellow); 
         color: var(--dark-grey); 
-        border: none; width: 100%; border-radius: 5px; font-size: 18px; font-weight: bold;
+        border: none; width: 100%; border-radius: 8px; font-size: 18px; font-weight: bold;
+        padding: 10px;
     }
     .metric-container {
-        background-color: #f8f9fa; padding: 20px; border-radius: 10px;
-        border-left: 10px solid var(--main-yellow);
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+        background-color: #f8f9fa; padding: 15px; border-radius: 10px;
+        border-left: 8px solid var(--main-yellow);
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+        text-align: center;
     }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🏗️ 建築施工工期估算輔助系統")
 
-# --- 3. 側邊欄輸入 ---
-with st.sidebar:
-    st.header("🏢 建築規模與資訊")
-    b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
-    b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
-    b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-    
+# --- 3. 參數輸入區 (置頂手機優化版) ---
+st.subheader("📋 參數設定")
+with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=True):
+    row1_col1, row1_col2, row1_col3 = st.columns([1, 1, 1])
+    with row1_col1:
+        b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
+        b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
+    with row1_col2:
+        b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
+        base_area = st.number_input("基地面積 (坪)", min_value=10, value=500, step=10)
+    with row1_col3:
+        floors_up = st.number_input("地上層數", min_value=1, value=12)
+        floors_down = st.number_input("地下層數", min_value=0, value=3)
+
     st.divider()
-    base_area = st.number_input("基地面積 (坪)", min_value=10, value=500, step=10)
-    floors_up = st.number_input("地上層數", min_value=1, value=12)
-    floors_down = st.number_input("地下層數", min_value=0, value=3)
     
+    row2_col1, row2_col2, row2_col3 = st.columns([1, 1, 1])
+    with row2_col1:
+        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除處理)"])
+        soil_improvement = st.selectbox("地質改良項目", ["無", "局部地質改良 (JSP/CCP)", "全區地質改良"])
+    with row2_col2:
+        prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
+        if prep_type == "自訂":
+            prep_days = st.number_input("自訂前置天數", value=120)
+        else:
+            prep_days = 120 if "一般" in prep_type else 210 if "鄰捷運" in prep_type else 300
+    with row2_col3:
+        start_date = st.date_input("預計開工日期", datetime.date.today())
+        inspection_days = st.number_input("消檢及使照取得天數", value=(150 if b_type in ["百貨", "醫院"] else 90))
+
     st.divider()
-    st.header("🧱 基地現況與基礎")
-    site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除處理)"])
-    soil_improvement = st.selectbox("地質改良項目", ["無", "局部地質改良 (JSP/CCP)", "全區地質改良"])
-
-# --- 4. 主要邏輯區塊 ---
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("🏁 階段一：前置作業")
-    prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
-    if prep_type == "一般 (120天)": prep_days = 120
-    elif "鄰捷運" in prep_type: prep_days = 210
-    elif "環評" in prep_type: prep_days = 300
-    else: prep_days = st.number_input("前置天數", value=120)
-
-    st.subheader("📝 結尾階段")
-    # 根據建物類型決定消檢複雜度
-    insp_base = 150 if b_type in ["百貨", "醫院"] else 90
-    inspection_days = st.number_input("消檢及使照取得天數", value=insp_base)
-
-with col2:
-    st.subheader("📅 時間修正設定")
-    start_date = st.date_input("預計開工日期", datetime.date.today())
+    
+    st.write("**工期修正設定**")
     use_correction = st.checkbox("啟用工期修正 (排除非工作日)", value=True)
-    exclude_weekend = st.checkbox("排除週六、週日", value=True) if use_correction else False
-    exclude_cny = st.checkbox("扣除農曆過年 (10天)", value=True) if use_correction else False
+    corr_col1, corr_col2 = st.columns(2)
+    with corr_col1:
+        exclude_weekend = st.checkbox("排除週六、週日", value=True) if use_correction else False
+    with corr_col2:
+        # 已修正為 7 天
+        exclude_cny = st.checkbox("扣除農曆過年 (7天)", value=True) if use_correction else False
 
-# --- 5. 核心運算 ---
-# 基地規模修正 (每 100 坪增減 2%)
+# --- 4. 核心運算邏輯 ---
 area_multiplier = max(0.8, min(1 + ((base_area - 500) / 100) * 0.02, 1.5))
-
-# A. 拆除工程
 t_demo = (45 if "舊建物" in site_condition else 80 if "舊地下室" in site_condition else 0) * area_multiplier
-
-# B. 地下工程
 sub_days = floors_down * (45 if b_method == "順打工法" else 55) * area_multiplier
-
-# C. 地質改良
 t_soil = (45 if "局部" in soil_improvement else 90 if "全區" in soil_improvement else 0) * area_multiplier
-
-# D. 地上結構
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 t_super = floors_up * struct_map.get(b_struct, 14) * area_multiplier
-
-# E. 建物用途加權 (影響裝修與複雜度)
 type_multiplier = {"住宅": 1.0, "辦公大樓": 1.1, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}
 k = type_multiplier.get(b_type, 1.0)
 
-# 總工作天數計算
 main_construction_days = int((t_demo + sub_days + t_soil + t_super) * k)
 total_work_days = int(prep_days + main_construction_days + inspection_days)
 
-# --- 6. 日期跳轉運算 ---
+# --- 5. 日期跳轉運算 ---
 def calculate_date(start, work_days, skip_weekend, skip_cny):
     curr = start
     added = 0
     while added < work_days:
         curr += timedelta(days=1)
         if skip_weekend and curr.weekday() >= 5: continue
-        if skip_cny and curr.month == 2 and 1 <= curr.day <= 10: continue
+        # 修正：過年期間扣除 7 天 (模擬每年 2/1-2/7)
+        if skip_cny and curr.month == 2 and 1 <= curr.day <= 7: continue
         added += 1
     return curr
 
 finish_date = calculate_date(start_date, total_work_days, exclude_weekend, exclude_cny)
 calendar_days = (finish_date - start_date).days
 
-# --- 7. 預估結果分析 (4 欄位顯示) ---
+# --- 6. 預估結果分析 ---
 st.divider()
 st.subheader("📊 預估結果分析")
 
-c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.markdown(f"<div class='metric-container'><small>總工作天數</small><br><span style='font-size:22px; font-weight:bold;'>{total_work_days} 天</span></div>", unsafe_allow_html=True)
-with c2:
-    total_months = calendar_days / 30.44
-    st.markdown(f"<div class='metric-container'><small>預估總工期 (月)</small><br><span style='font-size:22px; font-weight:bold;'>{total_months:.1f} 個月</span></div>", unsafe_allow_html=True)
-with c3:
-    st.markdown(f"<div class='metric-container' style='border-left-color:#FF4438;'><small>預計完工日期</small><br><span style='font-size:22px; font-weight:bold; color:#FF4438;'>{finish_date}</span></div>", unsafe_allow_html=True)
-with c4:
-    st.markdown(f"<div class='metric-container'><small>總日曆天數</small><br><span style='font-size:22px; font-weight:bold;'>{calendar_days} 天</span></div>", unsafe_allow_html=True)
+res_col1, res_col2 = st.columns(2)
+res_col3, res_col4 = st.columns(2)
 
-# 8. 階段拆解 (進度條)
-st.write("")
+with res_col1:
+    st.markdown(f"<div class='metric-container'><small>總工作天數</small><br><span style='font-size:24px; font-weight:bold;'>{total_work_days} 天</span></div>", unsafe_allow_html=True)
+with res_col2:
+    st.markdown(f"<div class='metric-container'><small>預估總工期 (月)</small><br><span style='font-size:24px; font-weight:bold;'>{calendar_days / 30.44:.1f} 個月</span></div>", unsafe_allow_html=True)
+with res_col3:
+    st.markdown(f"<div class='metric-container' style='border-left-color:#FF4438;'><small>預計完工日期</small><br><span style='font-size:24px; font-weight:bold; color:#FF4438;'>{finish_date}</span></div>", unsafe_allow_html=True)
+with res_col4:
+    st.markdown(f"<div class='metric-container'><small>總日曆天數</small><br><span style='font-size:24px; font-weight:bold;'>{calendar_days} 天</span></div>", unsafe_allow_html=True)
+
 st.progress(min(1.0, (prep_days + t_demo) / total_work_days))
-st.caption(f"時程分配：前置與拆除約 {int(prep_days + t_demo)}天 | 主體工程(含加權)約 {main_construction_days - int(t_demo)}天 | 尾段使照約 {inspection_days}天")
+st.caption(f"工期構成：前置作業與基地現況處理佔比最高，主體工程依 {b_struct} 結構型式計算。")
 
-with st.expander("ℹ️ 計算邏輯說明"):
-    st.write(f"- **面積修正係數**: {area_multiplier:.2f} (以 500 坪為基準 1.0 調整)")
-    st.write(f"- **結構循環**: {b_struct} 每層基準為 {struct_map.get(b_struct)} 天")
-    st.write(f"- **用途加權**: {b_type} 複雜度係數為 {k}")
+with st.expander("ℹ️ 詳細計算參數"):
+    st.write(f"基地規模修正: **{area_multiplier:.2f}**")
+    st.write(f"農曆年扣除天數: **7 天**")
