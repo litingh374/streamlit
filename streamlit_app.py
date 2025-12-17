@@ -6,7 +6,7 @@ import io
 from openpyxl.styles import Font, Alignment, PatternFill
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.7", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v2.8", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -25,9 +25,11 @@ st.markdown("""
     }
     .area-display {
         background-color: #e3f2fd; padding: 5px 10px; border-radius: 5px;
-        font-size: 14px; color: #1565c0; margin-top: -15px; margin-bottom: 10px;
+        font-size: 14px; color: #1565c0; margin-top: -10px; margin-bottom: 10px;
         border-left: 3px solid #1565c0;
     }
+    /* 調整輸入框間距讓對齊更精準 */
+    .stNumberInput, .stSelectbox { margin-bottom: -10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -38,44 +40,31 @@ project_name = st.text_input("📝 請輸入專案名稱", value="未命名專�
 # --- 4. 參數輸入區 ---
 st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=True):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
-        b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
-        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板"])
+    # 使用大欄位切分：左側佔 2/3 (放 6 個格子)，右側佔 1/3 (放 3 個垂直格子)
+    main_col_left, main_col_right = st.columns([2, 1])
+
+    with main_col_left:
+        # 左側再切分為兩小欄，形成 2x3 矩陣
+        sub_col1, sub_col2 = st.columns(2)
+        with sub_col1:
+            b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
+            b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
+            ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板"])
+        with sub_col2:
+            b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
+            site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
+            prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
     
-    with col2:
-        b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
-        prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
-        
-    with col3:
-        # 樓層規模設定
+    with main_col_right:
+        # 右側垂直排列 3 個格子，高度將與左側對齊
         st.write("**規模與面積設定**")
         floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
         floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
-        
-        # 基地面積輸入 (改為平方公尺)
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
-        # 自動換算為坪 (1 m2 = 0.3025 坪)
         base_area_ping = base_area_m2 * 0.3025
-        st.markdown(f"<div class='area-display'>換算面積：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
-
-st.subheader("📅 日期與排除條件 (非必要)")
-with st.expander("點擊展開/隱藏 日期設定"):
-    date_col1, date_col2 = st.columns([1, 2])
-    with date_col1:
-        enable_date = st.checkbox("啟用開工日期計算", value=True)
-        start_date = st.date_input("預計開工日期", datetime.date.today()) if enable_date else None
-    with date_col2:
-        st.write("**不可施工日修正**")
-        corr_col1, corr_col2, corr_col3 = st.columns(3)
-        with corr_col1: exclude_sat = st.checkbox("排除週六 (不施工)", value=True)
-        with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
-        with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
+        st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
 # --- 5. 核心運算邏輯 ---
-# 計算時仍以「坪」為權重基準（延用原算法模型）
 area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95}
@@ -90,6 +79,20 @@ prep_days = 120 if "一般" in prep_type else 210 if "鄰捷運" in prep_type el
 inspection_days = 150 if b_type in ["百貨", "醫院"] else 90
 main_construction_days = int((t_demo + t_sub + t_super) * k_usage)
 total_work_days = int(prep_days + main_construction_days + inspection_days)
+
+# 日期計算
+st.subheader("📅 日期與排除條件 (非必要)")
+with st.expander("點擊展開/隱藏 日期設定"):
+    date_col1, date_col2 = st.columns([1, 2])
+    with date_col1:
+        enable_date = st.checkbox("啟用開工日期計算", value=True)
+        start_date = st.date_input("預計開工日期", datetime.date.today()) if enable_date else None
+    with date_col2:
+        st.write("**不可施工日修正**")
+        corr_col1, corr_col2, corr_col3 = st.columns(3)
+        with corr_col1: exclude_sat = st.checkbox("排除週六 (不施工)", value=True)
+        with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
+        with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 def calculate_finish_date(start, work_days, skip_sat, skip_sun, skip_cny):
     if not start: return "日期未定"
@@ -111,7 +114,7 @@ st.divider()
 st.subheader("📊 預估結果分析")
 res_col1, res_col2, res_col3, res_col4 = st.columns(4)
 with res_col1: st.markdown(f"<div class='metric-container'><small>總工作天數</small><br><b>{total_work_days} 天</b></div>", unsafe_allow_html=True)
-with res_col2: st.markdown(f"<div class='metric-container'><small>外牆工法影響</small><br><b>{int((ext_wall_multiplier-1)*100)}%</b></div>", unsafe_allow_html=True)
+with res_col2: st.markdown(f"<div class='metric-container'><small>外牆修正</small><br><b>{int((ext_wall_multiplier-1)*100)}%</b></div>", unsafe_allow_html=True)
 with res_col3: 
     color = "#FF4438" if start_date else "#2D2926"
     st.markdown(f"<div class='metric-container' style='border-left-color:{color};'><small>預計完工日期</small><br><b style='color:{color};'>{calc_finish}</b></div>", unsafe_allow_html=True)
@@ -136,7 +139,6 @@ report_data = [
     ["[ 估算結果 ]", ""],
     ["預計開工日期", str(start_date) if start_date else "未提供"],
     ["總需求工作天數", f"{total_work_days} 天"],
-    ["總日曆天數", f"{calendar_days} 天"],
     ["預計完工日期", str(calc_finish)]
 ]
 df = pd.DataFrame(report_data, columns=["參數項目", "詳細內容"])
