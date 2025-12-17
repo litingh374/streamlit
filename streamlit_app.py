@@ -6,7 +6,7 @@ import io
 from openpyxl.styles import Font, Alignment, PatternFill
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.9", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v3.0", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -28,7 +28,6 @@ st.markdown("""
         font-size: 14px; color: #1565c0; margin-top: -10px; margin-bottom: 10px;
         border-left: 3px solid #1565c0;
     }
-    /* 強制標題對齊與間距優化 */
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
     </style>
     """, unsafe_allow_html=True)
@@ -40,7 +39,6 @@ project_name = st.text_input("📝 請輸入專案名稱", value="未命名專�
 # --- 4. 參數輸入區 ---
 st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=True):
-    # 使用三個等寬欄位，確保第一列的三個項目 (建物類型、施工方式、地上層數) 水平對齊
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -54,12 +52,26 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
         prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
         
     with col3:
-        # 第一格放置 地上層數 (F) 與其它項目對齊
         floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
         floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
+
+st.subheader("📅 日期與排除條件 (非必要)")
+with st.expander("點擊展開/隱藏 日期設定"):
+    date_col1, date_col2 = st.columns([1, 2])
+    with date_col1:
+        enable_date = st.checkbox("啟用開工日期計算", value=True)
+        # 如果沒勾選，計算基準日暫定為今天，但顯示會標註「日期未定」
+        start_date_val = st.date_input("預計開工日期", datetime.date.today())
+        start_date = start_date_val if enable_date else None
+    with date_col2:
+        st.write("**不可施工日修正**")
+        corr_col1, corr_col2, corr_col3 = st.columns(3)
+        with corr_col1: exclude_sat = st.checkbox("排除週六 (不施工)", value=True)
+        with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
+        with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 # --- 5. 核心運算邏輯 ---
 area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
@@ -77,22 +89,7 @@ inspection_days = 150 if b_type in ["百貨", "醫院"] else 90
 main_construction_days = int((t_demo + t_sub + t_super) * k_usage)
 total_work_days = int(prep_days + main_construction_days + inspection_days)
 
-# 日期計算
-st.subheader("📅 日期與排除條件 (非必要)")
-with st.expander("點擊展開/隱藏 日期設定"):
-    date_col1, date_col2 = st.columns([1, 2])
-    with date_col1:
-        enable_date = st.checkbox("啟用開工日期計算", value=True)
-        start_date = st.date_input("預計開工日期", datetime.date.today()) if enable_date else None
-    with date_col2:
-        st.write("**不可施工日修正**")
-        corr_col1, corr_col2, corr_col3 = st.columns(3)
-        with corr_col1: exclude_sat = st.checkbox("排除週六 (不施工)", value=True)
-        with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
-        with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
-
 def calculate_finish_date(start, work_days, skip_sat, skip_sun, skip_cny):
-    if not start: return "日期未定"
     curr = start
     added = 0
     while added < work_days:
@@ -103,19 +100,26 @@ def calculate_finish_date(start, work_days, skip_sat, skip_sun, skip_cny):
         added += 1
     return curr
 
-calc_finish = calculate_finish_date(start_date, total_work_days, exclude_sat, exclude_sun, exclude_cny)
-calendar_days = (calc_finish - start_date).days if start_date and isinstance(calc_finish, datetime.date) else "N/A"
+# 為了計算「日曆天數」，即便未啟用日期，也以 start_date_val (今天) 為基準算一遍
+temp_finish = calculate_finish_date(start_date_val, total_work_days, exclude_sat, exclude_sun, exclude_cny)
+calendar_days = (temp_finish - start_date_val).days
+duration_months = calendar_days / 30.44
+
+calc_finish_display = temp_finish if enable_date else "日期未定"
 
 # --- 6. 預估結果分析 ---
 st.divider()
 st.subheader("📊 預估結果分析")
 res_col1, res_col2, res_col3, res_col4 = st.columns(4)
-with res_col1: st.markdown(f"<div class='metric-container'><small>總工作天數</small><br><b>{total_work_days} 天</b></div>", unsafe_allow_html=True)
-with res_col2: st.markdown(f"<div class='metric-container'><small>外牆修正</small><br><b>{int((ext_wall_multiplier-1)*100)}%</b></div>", unsafe_allow_html=True)
+with res_col1: 
+    st.markdown(f"<div class='metric-container'><small>總工作天數</small><br><b>{total_work_days} 天</b></div>", unsafe_allow_html=True)
+with res_col2: 
+    st.markdown(f"<div class='metric-container'><small>總日曆天數 / 月份</small><br><b>{calendar_days} 天 / {duration_months:.1f} 月</b></div>", unsafe_allow_html=True)
 with res_col3: 
-    color = "#FF4438" if start_date else "#2D2926"
-    st.markdown(f"<div class='metric-container' style='border-left-color:{color};'><small>預計完工日期</small><br><b style='color:{color};'>{calc_finish}</b></div>", unsafe_allow_html=True)
-with res_col4: st.markdown(f"<div class='metric-container'><small>總日曆天數</small><br><b>{calendar_days} 天</b></div>", unsafe_allow_html=True)
+    color = "#FF4438" if enable_date else "#2D2926"
+    st.markdown(f"<div class='metric-container' style='border-left-color:{color};'><small>預計完工日期</small><br><b style='color:{color};'>{calc_finish_display}</b></div>", unsafe_allow_html=True)
+with res_col4: 
+    st.markdown(f"<div class='metric-container'><small>外牆修正影響</small><br><b>{int((ext_wall_multiplier-1)*100)}%</b></div>", unsafe_allow_html=True)
 
 # --- 7. Excel 報表產出 ---
 st.divider()
@@ -134,9 +138,11 @@ report_data = [
     ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
     ["", ""],
     ["[ 估算結果 ]", ""],
-    ["預計開工日期", str(start_date) if start_date else "未提供"],
     ["總需求工作天數", f"{total_work_days} 天"],
-    ["預計完工日期", str(calc_finish)]
+    ["總日曆天數", f"{calendar_days} 天"],
+    ["估算工期(月份)", f"{duration_months:.1f} 個月"],
+    ["預計開工日期", str(start_date) if start_date else "日期未定 (以今日試算)"],
+    ["預計完工日期", str(calc_finish_display)]
 ]
 df = pd.DataFrame(report_data, columns=["參數項目", "詳細內容"])
 
