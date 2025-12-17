@@ -6,7 +6,7 @@ import io
 from openpyxl.styles import Font, Alignment, PatternFill
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.4", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v2.5", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,19 +38,22 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
         b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
         b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板"])
+    
     with col2:
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
         base_area = st.number_input("基地面積 (坪)", min_value=10, value=500, step=10)
-        floors_up = st.number_input("地上層數", min_value=1, value=12)
-    with col3:
-        floors_down = st.number_input("地下層數", min_value=0, value=3)
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
+        
+    with col3:
+        # 將地上層與地下層排列成上下（垂直）
+        st.write("**樓層規模設定**")
+        floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
+        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
 
 st.subheader("📅 日期與排除條件 (非必要)")
 with st.expander("點擊展開/隱藏 日期設定"):
     date_col1, date_col2 = st.columns([1, 2])
     with date_col1:
-        # 開工日期移至此，並提供一個勾選框決定是否啟用日期計算
         enable_date = st.checkbox("啟用開工日期計算", value=True)
         start_date = st.date_input("預計開工日期", datetime.date.today()) if enable_date else None
     with date_col2:
@@ -76,7 +79,6 @@ inspection_days = 150 if b_type in ["百貨", "醫院"] else 90
 main_construction_days = int((t_demo + t_sub + t_super) * k_usage)
 total_work_days = int(prep_days + main_construction_days + inspection_days)
 
-# 日期計算
 def calculate_finish_date(start, work_days, skip_sat, skip_sun, skip_cny):
     if not start: return "日期未定"
     curr = start
