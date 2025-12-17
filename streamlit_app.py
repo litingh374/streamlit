@@ -6,7 +6,7 @@ import io
 from openpyxl.styles import Font, Alignment, PatternFill
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.8", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v2.9", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -28,8 +28,8 @@ st.markdown("""
         font-size: 14px; color: #1565c0; margin-top: -10px; margin-bottom: 10px;
         border-left: 3px solid #1565c0;
     }
-    /* 調整輸入框間距讓對齊更精準 */
-    .stNumberInput, .stSelectbox { margin-bottom: -10px; }
+    /* 強制標題對齊與間距優化 */
+    div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -40,24 +40,21 @@ project_name = st.text_input("📝 請輸入專案名稱", value="未命名專�
 # --- 4. 參數輸入區 ---
 st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=True):
-    # 使用大欄位切分：左側佔 2/3 (放 6 個格子)，右側佔 1/3 (放 3 個垂直格子)
-    main_col_left, main_col_right = st.columns([2, 1])
+    # 使用三個等寬欄位，確保第一列的三個項目 (建物類型、施工方式、地上層數) 水平對齊
+    col1, col2, col3 = st.columns(3)
 
-    with main_col_left:
-        # 左側再切分為兩小欄，形成 2x3 矩陣
-        sub_col1, sub_col2 = st.columns(2)
-        with sub_col1:
-            b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
-            b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
-            ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板"])
-        with sub_col2:
-            b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-            site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
-            prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
+    with col1:
+        b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
+        b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
+        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板"])
     
-    with main_col_right:
-        # 右側垂直排列 3 個格子，高度將與左側對齊
-        st.write("**規模與面積設定**")
+    with col2:
+        b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
+        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
+        prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
+        
+    with col3:
+        # 第一格放置 地上層數 (F) 與其它項目對齊
         floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
         floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
