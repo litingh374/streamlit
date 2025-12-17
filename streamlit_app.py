@@ -3,7 +3,7 @@ import datetime
 from datetime import timedelta
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v1.6", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v1.7", layout="wide")
 
 # --- 2. 色彩計劃 CSS ---
 st.markdown("""
@@ -65,14 +65,17 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
 
     st.divider()
     
-    st.write("**工期修正設定**")
+    st.write("**📅 不可施工日修正設定**")
     use_correction = st.checkbox("啟用工期修正 (排除非工作日)", value=True)
-    corr_col1, corr_col2 = st.columns(2)
+    corr_col1, corr_col2, corr_col3 = st.columns(3)
     with corr_col1:
-        exclude_weekend = st.checkbox("排除週六、週日", value=True) if use_correction else False
+        # 新增：拆分為週六項目
+        exclude_sat = st.checkbox("排除週六 (不施工)", value=True) if use_correction else False
     with corr_col2:
-        # 已修正為 7 天
-        exclude_cny = st.checkbox("扣除農曆過年 (7天)", value=True) if use_correction else False
+        # 新增：拆分為週日項目
+        exclude_sun = st.checkbox("排除週日 (不施工)", value=True) if use_correction else False
+    with corr_col3:
+        exclude_cny = st.checkbox("扣除過年 (7天)", value=True) if use_correction else False
 
 # --- 4. 核心運算邏輯 ---
 area_multiplier = max(0.8, min(1 + ((base_area - 500) / 100) * 0.02, 1.5))
@@ -87,19 +90,22 @@ k = type_multiplier.get(b_type, 1.0)
 main_construction_days = int((t_demo + sub_days + t_soil + t_super) * k)
 total_work_days = int(prep_days + main_construction_days + inspection_days)
 
-# --- 5. 日期跳轉運算 ---
-def calculate_date(start, work_days, skip_weekend, skip_cny):
+# --- 5. 日期跳轉運算 (更新：區分週六週日) ---
+def calculate_date(start, work_days, skip_sat, skip_sun, skip_cny):
     curr = start
     added = 0
     while added < work_days:
         curr += timedelta(days=1)
-        if skip_weekend and curr.weekday() >= 5: continue
-        # 修正：過年期間扣除 7 天 (模擬每年 2/1-2/7)
+        # weekday() == 5 為週六
+        if skip_sat and curr.weekday() == 5: continue
+        # weekday() == 6 為週日
+        if skip_sun and curr.weekday() == 6: continue
+        # 過年 7 天
         if skip_cny and curr.month == 2 and 1 <= curr.day <= 7: continue
         added += 1
     return curr
 
-finish_date = calculate_date(start_date, total_work_days, exclude_weekend, exclude_cny)
+finish_date = calculate_date(start_date, total_work_days, exclude_sat, exclude_sun, exclude_cny)
 calendar_days = (finish_date - start_date).days
 
 # --- 6. 預估結果分析 ---
@@ -119,8 +125,8 @@ with res_col4:
     st.markdown(f"<div class='metric-container'><small>總日曆天數</small><br><span style='font-size:24px; font-weight:bold;'>{calendar_days} 天</span></div>", unsafe_allow_html=True)
 
 st.progress(min(1.0, (prep_days + t_demo) / total_work_days))
-st.caption(f"工期構成：前置作業與基地現況處理佔比最高，主體工程依 {b_struct} 結構型式計算。")
+st.caption("工期進度分配：藍色條表示已完成前置與基礎準備階段之佔比。")
 
 with st.expander("ℹ️ 詳細計算參數"):
-    st.write(f"基地規模修正: **{area_multiplier:.2f}**")
-    st.write(f"農曆年扣除天數: **7 天**")
+    st.write(f"基地修正: **{area_multiplier:.2f}** | 結構型式: **{b_struct}**")
+    st.write(f"修正選項：週六({exclude_sat})、週日({exclude_sun})、過年({exclude_cny})")
