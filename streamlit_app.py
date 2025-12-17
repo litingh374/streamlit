@@ -3,9 +3,12 @@ import datetime
 from datetime import timedelta
 import pandas as pd
 import io
+# 引入 openpyxl 樣式庫
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.0", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v2.1", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -75,7 +78,7 @@ sub_days = floors_down * (45 if b_method == "順打工法" else 55) * area_multi
 t_soil = (45 if "局部" in soil_improvement else 90 if "全區" in soil_improvement else 0) * area_multiplier
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 t_super = floors_up * struct_map.get(b_struct, 14) * area_multiplier
-k = type_multiplier = {"住宅": 1.0, "辦公大樓": 1.1, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
+k = {"住宅": 1.0, "辦公大樓": 1.1, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 
 main_construction_days = int((t_demo + sub_days + t_soil + t_super) * k)
 total_work_days = int(prep_days + main_construction_days + inspection_days)
@@ -98,56 +101,98 @@ calendar_days = (finish_date - start_date).days
 st.divider()
 st.subheader("📊 預估結果分析")
 res_col1, res_col2, res_col3, res_col4 = st.columns(4)
-with res_col1: st.markdown(f"<div class='metric-container'><small>總工作天</small><br><b>{total_work_days} d</b></div>", unsafe_allow_html=True)
-with res_col2: st.markdown(f"<div class='metric-container'><small>總工期(月)</small><br><b>{calendar_days / 30.44:.1f} m</b></div>", unsafe_allow_html=True)
+with res_col1: st.markdown(f"<div class='metric-container'><small>總工作天</small><br><b>{total_work_days} 天</b></div>", unsafe_allow_html=True)
+with res_col2: st.markdown(f"<div class='metric-container'><small>預計工期(月)</small><br><b>{calendar_days / 30.44:.1f} 個月</b></div>", unsafe_allow_html=True)
 with res_col3: st.markdown(f"<div class='metric-container' style='border-left-color:#FF4438;'><small>預計完工</small><br><b style='color:#FF4438;'>{finish_date}</b></div>", unsafe_allow_html=True)
-with res_col4: st.markdown(f"<div class='metric-container'><small>日曆天</small><br><b>{calendar_days} d</b></div>", unsafe_allow_html=True)
+with res_col4: st.markdown(f"<div class='metric-container'><small>總日曆天</small><br><b>{calendar_days} 天</b></div>", unsafe_allow_html=True)
 
-# --- 7. Excel 報表生成與下載 ---
+# --- 7. 精緻 Excel 報表生成 ---
 st.divider()
 st.subheader("📥 報表產出")
 
-now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+if st.download_button:
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# 建立 Excel 數據字典
-data = {
-    "項目名稱": [project_name],
-    "產出時間": [now_str],
-    "建物類型": [b_type],
-    "結構型式": [b_struct],
-    "施工工法": [b_method],
-    "基地面積(坪)": [base_area],
-    "地上層數": [floors_up],
-    "地下層數": [floors_down],
-    "基地現況": [site_condition],
-    "地質改良": [soil_improvement],
-    "前置作業天數": [prep_days],
-    "消檢使照天數": [inspection_days],
-    "開工日期預計": [str(start_date)],
-    "排除週六": ["是" if exclude_sat else "否"],
-    "排除週日": ["是" if exclude_sun else "否"],
-    "扣除過年": ["是" if exclude_cny else "否"],
-    "預估總工作天": [total_work_days],
-    "預估日曆天": [calendar_days],
-    "預計完工日期": [str(finish_date)]
-}
+    # 數據準備
+    report_data = [
+        ["項目名稱", project_name],
+        ["報告產出時間", now_str],
+        ["", ""], # 空行
+        ["[ 建築規模 ]", ""],
+        ["建物類型", b_type],
+        ["結構型式", b_struct],
+        ["施工方式", b_method],
+        ["基地面積", f"{base_area} 坪"],
+        ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
+        ["", ""],
+        ["[ 施工條件與修正 ]", ""],
+        ["基地現況", site_condition],
+        ["地質改良", soil_improvement],
+        ["前置作業天數", f"{prep_days} 天"],
+        ["消檢使照天數", f"{inspection_days} 天"],
+        ["排除週六", "是" if exclude_sat else "否"],
+        ["排除週日", "是" if exclude_sun else "否"],
+        ["扣除過年(7天)", "是" if exclude_cny else "否"],
+        ["", ""],
+        ["[ 估算結果 ]", ""],
+        ["預計開工日期", str(start_date)],
+        ["總需求工作天數", f"{total_work_days} 天"],
+        ["總日曆天數", f"{calendar_days} 天"],
+        ["預估工期(月)", f"{calendar_days / 30.44:.1f} 個月"],
+        ["預計完工日期", str(finish_date)]
+    ]
 
-df = pd.DataFrame(data).T # 轉置讓標題在左側
-df.columns = ["內容值"]
+    df = pd.DataFrame(report_data, columns=["參數項目", "詳細內容"])
 
-# 使用 BytesIO 作為緩衝區產出 Excel
-output = io.BytesIO()
-with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    df.to_excel(writer, sheet_name='工期估算報告')
-excel_data = output.getvalue()
+    # 輸出 Excel 並美化
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='工期報告')
+        workbook = writer.book
+        worksheet = writer.sheets['工期報告']
 
-col_btn1, col_btn2 = st.columns(2)
-with col_btn1:
+        # 定義樣式
+        header_fill = PatternFill(start_color="2D2926", end_color="2D2926", fill_type="solid") # 深灰
+        header_font = Font(name='微軟正黑體', size=12, bold=True, color="FFB81C") # 金黃字
+        
+        main_font = Font(name='微軟正黑體', size=11)
+        bold_font = Font(name='微軟正黑體', size=11, bold=True)
+        
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                        top=Side(style='thin'), bottom=Side(style='thin'))
+
+        # 設定欄寬
+        worksheet.column_dimensions['A'].width = 25
+        worksheet.column_dimensions['B'].width = 40
+
+        # 套用樣式到每一列
+        for row_idx, row in enumerate(worksheet.iter_rows(min_row=1, max_row=worksheet.max_row), 1):
+            for cell in row:
+                cell.font = main_font
+                cell.alignment = Alignment(horizontal='left', vertical='center', indent=1)
+                
+                # 標題列樣式 (第一行)
+                if row_idx == 1:
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal='center')
+                
+                # 區段標題樣式 (中括號開頭)
+                if cell.value and isinstance(cell.value, str) and "[" in cell.value:
+                    cell.font = bold_font
+                    cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                
+                # 最後的完工日期加紅加粗
+                if cell.value == str(finish_date) or cell.value == "預計完工日期":
+                    cell.font = Font(name='微軟正黑體', size=12, bold=True, color="FF4438")
+
+        excel_data = output.getvalue()
+
     st.download_button(
-        label="📊 下載 Excel 報表",
+        label="📊 下載微軟正黑體 Excel 報表",
         data=excel_data,
-        file_name=f"工期報告_{project_name}_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx",
+        file_name=f"建築工期報告_{project_name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-with col_btn2:
-    st.info("Excel 報表包含所有參數清單，方便您複製到專案簡報或預算表中使用。")
+
+st.info("💡 產出的 Excel 已自動設定為「微軟正黑體」，並針對重點項目（如完工日期）進行了色彩標記。")
