@@ -3,12 +3,10 @@ import datetime
 from datetime import timedelta
 import pandas as pd
 import io
-# 引入 openpyxl 樣式庫
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-from openpyxl.utils import get_column_letter
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.1", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v2.2", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -106,93 +104,78 @@ with res_col2: st.markdown(f"<div class='metric-container'><small>預計工期(�
 with res_col3: st.markdown(f"<div class='metric-container' style='border-left-color:#FF4438;'><small>預計完工</small><br><b style='color:#FF4438;'>{finish_date}</b></div>", unsafe_allow_html=True)
 with res_col4: st.markdown(f"<div class='metric-container'><small>總日曆天</small><br><b>{calendar_days} 天</b></div>", unsafe_allow_html=True)
 
-# --- 7. 精緻 Excel 報表生成 ---
+# --- 7. Excel 報表生成 (修正穩定版) ---
 st.divider()
 st.subheader("📥 報表產出")
 
-if st.download_button:
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# 先準備數據框
+now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+report_data = [
+    ["項目名稱", project_name],
+    ["報告產出時間", now_str],
+    ["", ""],
+    ["[ 建築規模 ]", ""],
+    ["建物類型", b_type],
+    ["結構型式", b_struct],
+    ["施工方式", b_method],
+    ["基地面積", f"{base_area} 坪"],
+    ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
+    ["", ""],
+    ["[ 施工條件與修正 ]", ""],
+    ["基地現況", site_condition],
+    ["地質改良", soil_improvement],
+    ["前置作業天數", f"{prep_days} 天"],
+    ["消檢使照天數", f"{inspection_days} 天"],
+    ["排除週六", "是" if exclude_sat else "否"],
+    ["排除週日", "是" if exclude_sun else "否"],
+    ["扣除過年(7天)", "是" if exclude_cny else "否"],
+    ["", ""],
+    ["[ 估算結果 ]", ""],
+    ["預計開工日期", str(start_date)],
+    ["總需求工作天數", f"{total_work_days} 天"],
+    ["總日曆天數", f"{calendar_days} 天"],
+    ["預估工期(月)", f"{calendar_days / 30.44:.1f} 個月"],
+    ["預計完工日期", str(finish_date)]
+]
+df = pd.DataFrame(report_data, columns=["參數項目", "詳細內容"])
 
-    # 數據準備
-    report_data = [
-        ["項目名稱", project_name],
-        ["報告產出時間", now_str],
-        ["", ""], # 空行
-        ["[ 建築規模 ]", ""],
-        ["建物類型", b_type],
-        ["結構型式", b_struct],
-        ["施工方式", b_method],
-        ["基地面積", f"{base_area} 坪"],
-        ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
-        ["", ""],
-        ["[ 施工條件與修正 ]", ""],
-        ["基地現況", site_condition],
-        ["地質改良", soil_improvement],
-        ["前置作業天數", f"{prep_days} 天"],
-        ["消檢使照天數", f"{inspection_days} 天"],
-        ["排除週六", "是" if exclude_sat else "否"],
-        ["排除週日", "是" if exclude_sun else "否"],
-        ["扣除過年(7天)", "是" if exclude_cny else "否"],
-        ["", ""],
-        ["[ 估算結果 ]", ""],
-        ["預計開工日期", str(start_date)],
-        ["總需求工作天數", f"{total_work_days} 天"],
-        ["總日曆天數", f"{calendar_days} 天"],
-        ["預估工期(月)", f"{calendar_days / 30.44:.1f} 個月"],
-        ["預計完工日期", str(finish_date)]
-    ]
+# 核心修正：將 Excel 生成獨立於 download_button 外
+buffer = io.BytesIO()
+with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+    df.to_excel(writer, index=False, sheet_name='工期報告')
+    worksheet = writer.sheets['工期報告']
+    
+    # 字體與樣式設定
+    header_font = Font(name='微軟正黑體', size=12, bold=True, color="FFB81C")
+    header_fill = PatternFill(start_color="2D2926", end_color="2D2926", fill_type="solid")
+    main_font = Font(name='微軟正黑體', size=11)
+    
+    worksheet.column_dimensions['A'].width = 25
+    worksheet.column_dimensions['B'].width = 40
+    
+    for row_idx, row in enumerate(worksheet.iter_rows(min_row=1, max_row=worksheet.max_row), 1):
+        for cell in row:
+            cell.font = main_font
+            cell.alignment = Alignment(horizontal='left', vertical='center', indent=1)
+            if row_idx == 1:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center')
+            if cell.value and isinstance(cell.value, str) and "[" in cell.value:
+                cell.font = Font(name='微軟正黑體', size=11, bold=True)
+                cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+            if cell.value == str(finish_date) or cell.value == "預計完工日期":
+                cell.font = Font(name='微軟正黑體', size=12, bold=True, color="FF4438")
 
-    df = pd.DataFrame(report_data, columns=["參數項目", "詳細內容"])
+# 獲取完成的數據
+excel_data = buffer.getvalue()
 
-    # 輸出 Excel 並美化
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='工期報告')
-        workbook = writer.book
-        worksheet = writer.sheets['工期報告']
+# 下載按鈕
+st.download_button(
+    label="📊 下載微軟正黑體 Excel 報表",
+    data=excel_data,
+    file_name=f"建築工期報告_{project_name}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
-        # 定義樣式
-        header_fill = PatternFill(start_color="2D2926", end_color="2D2926", fill_type="solid") # 深灰
-        header_font = Font(name='微軟正黑體', size=12, bold=True, color="FFB81C") # 金黃字
-        
-        main_font = Font(name='微軟正黑體', size=11)
-        bold_font = Font(name='微軟正黑體', size=11, bold=True)
-        
-        border = Border(left=Side(style='thin'), right=Side(style='thin'), 
-                        top=Side(style='thin'), bottom=Side(style='thin'))
-
-        # 設定欄寬
-        worksheet.column_dimensions['A'].width = 25
-        worksheet.column_dimensions['B'].width = 40
-
-        # 套用樣式到每一列
-        for row_idx, row in enumerate(worksheet.iter_rows(min_row=1, max_row=worksheet.max_row), 1):
-            for cell in row:
-                cell.font = main_font
-                cell.alignment = Alignment(horizontal='left', vertical='center', indent=1)
-                
-                # 標題列樣式 (第一行)
-                if row_idx == 1:
-                    cell.fill = header_fill
-                    cell.font = header_font
-                    cell.alignment = Alignment(horizontal='center')
-                
-                # 區段標題樣式 (中括號開頭)
-                if cell.value and isinstance(cell.value, str) and "[" in cell.value:
-                    cell.font = bold_font
-                    cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
-                
-                # 最後的完工日期加紅加粗
-                if cell.value == str(finish_date) or cell.value == "預計完工日期":
-                    cell.font = Font(name='微軟正黑體', size=12, bold=True, color="FF4438")
-
-        excel_data = output.getvalue()
-
-    st.download_button(
-        label="📊 下載微軟正黑體 Excel 報表",
-        data=excel_data,
-        file_name=f"建築工期報告_{project_name}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-st.info("💡 產出的 Excel 已自動設定為「微軟正黑體」，並針對重點項目（如完工日期）進行了色彩標記。")
+st.info("💡 產出的 Excel 檔案包含微軟正黑體樣式。若仍無法開啟，請檢查是否有安裝 Excel 軟體。")
