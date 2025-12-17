@@ -6,7 +6,7 @@ import io
 from openpyxl.styles import Font, Alignment, PatternFill
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v2.5", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v2.6", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -22,6 +22,10 @@ st.markdown("""
         background-color: #f8f9fa; padding: 15px; border-radius: 10px;
         border-left: 8px solid var(--main-yellow);
         box-shadow: 2px 2px 8px rgba(0,0,0,0.05); margin-bottom: 15px; text-align: center;
+    }
+    .area-display {
+        background-color: #eeeeee; padding: 5px 10px; border-radius: 5px;
+        font-size: 14px; color: #555555; margin-top: -15px; margin-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -41,14 +45,19 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
     
     with col2:
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-        base_area = st.number_input("基地面積 (坪)", min_value=10, value=500, step=10)
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
+        prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
         
     with col3:
-        # 將地上層與地下層排列成上下（垂直）
-        st.write("**樓層規模設定**")
+        # 樓層規模設定
+        st.write("**規模與面積設定**")
         floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
         floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
+        
+        # 基地面積 (坪) 並自動換算平方公尺
+        base_area_ping = st.number_input("基地面積 (坪)", min_value=1.0, value=500.0, step=10.0)
+        base_area_m2 = base_area_ping * 3.305785
+        st.markdown(f"<div class='area-display'>換算面積：{base_area_m2:,.2f} m²</div>", unsafe_allow_html=True)
 
 st.subheader("📅 日期與排除條件 (非必要)")
 with st.expander("點擊展開/隱藏 日期設定"):
@@ -64,7 +73,7 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 # --- 5. 核心運算邏輯 ---
-area_multiplier = max(0.8, min(1 + ((base_area - 500) / 100) * 0.02, 1.5))
+area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
@@ -74,7 +83,7 @@ t_sub = floors_down * (45 if b_method == "順打工法" else 55) * area_multipli
 t_super = floors_up * struct_map.get(b_struct, 14) * area_multiplier * ext_wall_multiplier
 k_usage = {"住宅": 1.0, "辦公大樓": 1.1, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 
-prep_days = 120
+prep_days = 120 if "一般" in prep_type else 210 if "鄰捷運" in prep_type else 300
 inspection_days = 150 if b_type in ["百貨", "醫院"] else 90
 main_construction_days = int((t_demo + t_sub + t_super) * k_usage)
 total_work_days = int(prep_days + main_construction_days + inspection_days)
@@ -92,7 +101,7 @@ def calculate_finish_date(start, work_days, skip_sat, skip_sun, skip_cny):
     return curr
 
 calc_finish = calculate_finish_date(start_date, total_work_days, exclude_sat, exclude_sun, exclude_cny)
-calendar_days = (calc_finish - start_date).days if start_date else "N/A"
+calendar_days = (calc_finish - start_date).days if start_date and isinstance(calc_finish, datetime.date) else "N/A"
 
 # --- 6. 預估結果分析 ---
 st.divider()
@@ -117,13 +126,13 @@ report_data = [
     ["建物類型", b_type],
     ["結構型式", b_struct],
     ["外牆型式", ext_wall],
-    ["基地面積", f"{base_area} 坪"],
+    ["基地面積 (坪)", f"{base_area_ping} 坪"],
+    ["基地面積 (m2)", f"{base_area_m2:,.2f} m²"],
     ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
     ["", ""],
     ["[ 估算結果 ]", ""],
     ["預計開工日期", str(start_date) if start_date else "未提供"],
     ["總需求工作天數", f"{total_work_days} 天"],
-    ["總日曆天數", f"{calendar_days} 天"],
     ["預計完工日期", str(calc_finish)]
 ]
 df = pd.DataFrame(report_data, columns=["參數項目", "詳細內容"])
