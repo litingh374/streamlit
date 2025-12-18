@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.5", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.6", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -47,15 +47,10 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
     with col1:
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
-        
-        # [修改] 交換順序：先地下，後地上
         st.markdown("**結構型式**")
         c1_1, c1_2 = st.columns(2)
-        with c1_1: 
-            struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
-        with c1_2: 
-            struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
-            
+        with c1_1: struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
+        with c1_2: struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
     
     with col2:
@@ -107,12 +102,11 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
 
     st.write("") 
     building_details_df = None
-    
-    # 核心邏輯變數
+    max_floors_up = 1
+    building_count = 1
     calc_floors_struct = 1
     display_max_floor = 1
     display_max_roof = 0
-    building_count = 1
 
     if "集合住宅" in b_type:
         st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置")
@@ -140,14 +134,12 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
                 edited_df["結構總層"] = edited_df["地上層數"] + edited_df["屋突層數"]
                 max_struct_idx = edited_df["結構總層"].idxmax()
                 row_max = edited_df.loc[max_struct_idx]
-                
                 calc_floors_struct = int(row_max["結構總層"])
                 display_max_floor = int(row_max["地上層數"])
                 display_max_roof = int(row_max["屋突層數"])
                 building_count = len(edited_df)
-                
                 building_details_df = edited_df
-                st.success(f"系統偵測共 **{building_count}** 棟。結構要徑依據 **{row_max['棟別名稱']}** 計算 (地上{display_max_floor}F + 屋突{display_max_roof}R)。")
+                st.success(f"系統偵測共 **{building_count}** 棟。結構要徑依據 **{row_max['棟別名稱']}** 計算。")
             else:
                 st.error("⚠️ 請至少輸入一棟資料")
                 calc_floors_struct = 15
@@ -224,7 +216,12 @@ elif "微型樁" in foundation_type: foundation_add = 30
 
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor)
-d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add + d_aux_wall_days) * area_multiplier)
+
+# [Key Update] 拆分地下室工期
+# 1. 基礎開挖 (Excavation)
+d_excav = int(((floors_down * 25 * excav_multiplier) + d_aux_wall_days) * area_multiplier)
+# 2. 地下結構 (Underground Structure)
+d_struct_below = int(((floors_down * 35) + foundation_add) * area_multiplier)
 
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
 d_ext_wall = int(calc_floors_struct * 12 * area_multiplier * ext_wall_multiplier * k_usage)
@@ -247,40 +244,60 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程
+# [C] CPM 排程 (更新邏輯)
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 p2_s = p1_e + timedelta(days=1)
 p2_e = get_end_date(p2_s, d_demo)
 p_soil_s = p2_e + timedelta(days=1)
 p_soil_e = get_end_date(p_soil_s, d_soil)
-p3_s = p_soil_e + timedelta(days=1)
-p3_e = get_end_date(p3_s, d_sub)
 
-sub_note = f"要徑 ({struct_below})"
-if aux_wall_factor > 0: sub_note += " +輔助壁"
+# 4. 基礎開挖 (Start)
+p4_s = p_soil_e + timedelta(days=1)
+p4_e = get_end_date(p4_s, d_excav)
 
+# 5. 地下結構 (New Phase)
 if "逆打" in b_method or "雙順打" in b_method:
+    # 逆打：開挖與結構幾乎併行 (稍有延後)
+    lag_excav = int(30 * area_multiplier) # 假設開挖一個月後開始做結構
+    p5_s = get_end_date(p4_s, lag_excav)
+    p5_e = get_end_date(p5_s, d_struct_below)
+    
+    # 地上結構 (在逆打中，通常在1F版完成後，約開挖中期開始)
     lag_1f_slab = int(60 * area_multiplier)
-    p4_s = get_end_date(p3_s, lag_1f_slab)
-    struct_note = f"併行 ({display_max_floor}F+{display_max_roof}R)"
+    p6_s = get_end_date(p4_s, lag_1f_slab) # 從開挖開始算
+    struct_note_below = f"併行 ({struct_below})"
+    struct_note_above = f"併行 (逆打)"
 else:
-    p4_s = p3_e + timedelta(days=1)
-    struct_note = f"順打 ({display_max_floor}F+{display_max_roof}R)"
+    # 順打：開挖完 -> 做地下結構 -> 做地上結構
+    p5_s = p4_e + timedelta(days=1)
+    p5_e = get_end_date(p5_s, d_struct_below)
+    
+    p6_s = p5_e + timedelta(days=1)
+    struct_note_below = f"要徑 ({struct_below})"
+    struct_note_above = f"順打接續"
 
-p4_e = get_end_date(p4_s, d_struct_body)
+# 6. 地上主體
+p6_e = get_end_date(p6_s, d_struct_body)
+
+# 其他工項
 lag_ext = int(d_struct_body * 0.5)
-p_ext_s = get_end_date(p4_s, lag_ext)
+p_ext_s = get_end_date(p6_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
+
 lag_mep = int(d_struct_body * 0.3) 
-p5_s = get_end_date(p4_s, lag_mep)
-p5_e = get_end_date(p5_s, d_mep)
+p7_s = get_end_date(p6_s, lag_mep)
+p7_e = get_end_date(p7_s, d_mep)
+
 lag_finishing = int(d_struct_body * 0.6)
-p6_s = get_end_date(p4_s, lag_finishing)
-p6_e = get_end_date(p6_s, d_finishing)
-p7_s = p_ext_e - timedelta(days=30)
-p7_e = get_end_date(p7_s, d_insp)
-final_project_finish = max(p3_e, p4_e, p_ext_e, p5_e, p6_e, p7_e)
+p8_s = get_end_date(p6_s, lag_finishing)
+p8_e = get_end_date(p8_s, d_finishing)
+
+p9_s = p_ext_e - timedelta(days=30)
+p9_e = get_end_date(p9_s, d_insp)
+
+# 完工日需考慮所有結構結束
+final_project_finish = max(p5_e, p6_e, p_ext_e, p7_e, p8_e, p9_e)
 calendar_days = (final_project_finish - p1_s).days
 duration_months = calendar_days / 30.44
 avg_ratio = 5/7 if exclude_sat and exclude_sun else 6/7 if exclude_sun else 1.0
@@ -305,16 +322,20 @@ with res_col4:
 
 # --- 7. 詳細進度拆解表 ---
 st.subheader("📅 詳細工項進度建議表")
+excav_note = f"擋土:{excavation_system}"
+if rw_aux_options: excav_note += " (+輔助壁)"
+
 schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": "要徑"},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": demo_note},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
-    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": sub_note},
-    {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": f"{struct_note} ({struct_above})"},
-    {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
-    {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
-    {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
-    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": f"多棟聯合驗收"},
+    {"工項階段": "4. 基礎開挖與擋土支撐", "需用工作天": d_excav, "Start": p4_s, "Finish": p4_e, "備註": excav_note}, # New Item
+    {"工項階段": "5. 地下結構工程", "需用工作天": d_struct_below, "Start": p5_s, "Finish": p5_e, "備註": struct_note_below}, # New Item
+    {"工項階段": "6. 地上主體結構", "需用工作天": d_struct_body, "Start": p6_s, "Finish": p6_e, "備註": struct_note_above},
+    {"工項階段": "7. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
+    {"工項階段": "8. 內裝機電/管線", "需用工作天": d_mep, "Start": p7_s, "Finish": p7_e, "備註": "併行"},
+    {"工項階段": "9. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p8_s, "Finish": p8_e, "備註": "併行"},
+    {"工項階段": "10. 驗收取得使照", "需用工作天": d_insp, "Start": p9_s, "Finish": p9_e, "備註": f"多棟聯合驗收"},
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
@@ -327,25 +348,16 @@ st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始"
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
-    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"]
+    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#708090", "#A0522D", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"] # 增加顏色
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=500
+        hover_data={"需用工作天": True, "備註": True}, height=550
     )
-    # [視覺參數維持] width=0.6, font size=15
-    fig.update_traces(
-        textposition='inside', 
-        insidetextanchor='start', 
-        width=0.6, 
-        marker_line_width=0, 
-        opacity=0.9, 
-        textfont=dict(size=15, family="Microsoft JhengHei")
-    )
+    fig.update_traces(textposition='inside', insidetextanchor='start', width=0.6, marker_line_width=0, opacity=0.9, textfont=dict(size=15, family="Microsoft JhengHei"))
     fig.update_layout(
-        plot_bgcolor='white', 
-        font=dict(family="Microsoft JhengHei", size=15, color="#2D2926"), 
+        plot_bgcolor='white', font=dict(family="Microsoft JhengHei", size=15, color="#2D2926"), 
         xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=15)), 
         yaxis=dict(title="", autorange="reversed", tickfont=dict(size=15)), 
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=13)), 
