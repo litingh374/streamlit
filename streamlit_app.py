@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v4.4", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v4.5", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -91,11 +91,8 @@ with st.expander("點擊展開/隱藏 日期設定"):
 area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 k_usage = {"住宅": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
-
-# 外牆係數 (僅影響外牆工項)
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
-
 excavation_map = {
     "連續壁 + 型鋼內支撐 (標準)": 1.0, "連續壁 + 地錨 (開挖動線佳)": 0.9,
     "全套管切削樁 + 型鋼內支撐": 0.95, "預壘樁/排樁 + 型鋼內支撐": 0.85,
@@ -118,10 +115,7 @@ elif "樁基礎" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
 d_sub = int(((floors_down * (45 if b_method == "順打工法" else 55) * excav_multiplier) + foundation_add) * area_multiplier)
 
-# 拆分結構與外牆
-# 地上結構 (不含外牆係數)
 d_struct_body = int(floors_up * struct_map.get(b_struct, 14) * area_multiplier * k_usage)
-# 外牆工程 (基準約12天/層 * 係數)
 d_ext_wall = int(floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
 
 d_mep = int((60 + floors_up * 4) * area_multiplier * k_usage) 
@@ -140,7 +134,7 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程 (外牆獨立節點)
+# [C] CPM 排程 (v4.5 使照優化邏輯)
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 
@@ -153,31 +147,30 @@ p_soil_e = get_end_date(p_soil_s, d_soil)
 p3_s = p_soil_e + timedelta(days=1)
 p3_e = get_end_date(p3_s, d_sub)
 
-# 4. 地上結構
 p4_s = p3_e + timedelta(days=1)
 p4_e = get_end_date(p4_s, d_struct_body)
 
-# New: 建物外牆 (結構體 50% 進場)
 lag_ext = int(d_struct_body * 0.5)
 p_ext_s = get_end_date(p4_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
 
-# 6. 機電 (結構體 30% 進場)
 lag_mep = int(d_struct_body * 0.3) 
 p5_s = get_end_date(p4_s, lag_mep)
 p5_e = get_end_date(p5_s, d_mep)
 
-# 7. 裝修 (結構體 60% 進場)
 lag_finishing = int(d_struct_body * 0.6)
 p6_s = get_end_date(p4_s, lag_finishing)
 p6_e = get_end_date(p6_s, d_finishing)
 
-# 完工驗收 (必須等：結構、外牆、機電、裝修 全部完成)
-latest_finish = max(p4_e, p_ext_e, p5_e, p6_e)
-p7_s = latest_finish + timedelta(days=1)
+# 8. 驗收使照 (修正：外牆完成前 30 天開始)
+# 邏輯：p7_s = 外牆結束日 - 30天
+p7_s = p_ext_e - timedelta(days=30)
 p7_e = get_end_date(p7_s, d_insp)
 
-calendar_days = (p7_e - p1_s).days
+# 最終完工日 (取所有工項的最晚結束日)
+final_project_finish = max(p4_e, p_ext_e, p5_e, p6_e, p7_e)
+
+calendar_days = (final_project_finish - p1_s).days
 duration_months = calendar_days / 30.44
 sum_work_days = d_prep + d_demo + d_soil + d_sub + d_struct_body + d_ext_wall + d_mep + d_finishing + d_insp
 
@@ -189,7 +182,7 @@ with res_col1: st.markdown(f"<div class='metric-container'><small>累計工項�
 with res_col2: st.markdown(f"<div class='metric-container'><small>專案日曆天 / 月數</small><br><b>{calendar_days} 天 / {duration_months:.1f} 月</b></div>", unsafe_allow_html=True)
 with res_col3: 
     c_color = "#FF4438" if enable_date else "#2D2926"
-    d_date = p7_e if enable_date else "日期未定"
+    d_date = final_project_finish if enable_date else "日期未定"
     st.markdown(f"<div class='metric-container' style='border-left-color:{c_color};'><small>預計完工日期</small><br><b style='color:{c_color};'>{d_date}</b></div>", unsafe_allow_html=True)
 with res_col4: 
     overlap = (p4_e - p5_s).days
@@ -206,7 +199,7 @@ schedule_data = [
     {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行 (結構50%)"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
     {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
-    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": "完工後進行"},
+    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": "外牆完成前1個月啟動"},
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
@@ -220,7 +213,6 @@ st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
     
-    # 新增外牆的顏色 (IndianRed)
     professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"]
     
     fig = px.timeline(
@@ -233,7 +225,7 @@ if not sched_display_df.empty:
         text="工項階段", 
         title=f"【{project_name}】工程進度模擬",
         hover_data={"需用工作天": True, "備註": True},
-        height=480 # 稍微加高以容納新工項
+        height=480
     )
     
     fig.update_traces(
@@ -286,7 +278,7 @@ report_rows.extend([
     ["[ 總結結果 ]", "", "", ""],
     ["累計工項人天", f"{sum_work_days} 天", "", ""],
     ["專案總日曆天數", f"{calendar_days} 天", "", ""],
-    ["預估完工日期", str(p7_e if enable_date else "日期未定"), "", ""]
+    ["預估完工日期", str(final_project_finish if enable_date else "日期未定"), "", ""]
 ])
 
 df_export = pd.DataFrame(report_rows, columns=["項目", "數值/天數", "日期區間", "備註"])
