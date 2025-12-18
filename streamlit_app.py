@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.6", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.7", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -216,11 +216,7 @@ elif "微型樁" in foundation_type: foundation_add = 30
 
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor)
-
-# [Key Update] 拆分地下室工期
-# 1. 基礎開挖 (Excavation)
 d_excav = int(((floors_down * 25 * excav_multiplier) + d_aux_wall_days) * area_multiplier)
-# 2. 地下結構 (Underground Structure)
 d_struct_below = int(((floors_down * 35) + foundation_add) * area_multiplier)
 
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
@@ -228,9 +224,14 @@ d_ext_wall = int(calc_floors_struct * 12 * area_multiplier * ext_wall_multiplier
 d_mep = int((60 + calc_floors_struct * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + calc_floors_struct * 3) * area_multiplier * k_usage)
 
+# [Updated] 驗收天數邏輯
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
-if "集合住宅" in b_type: d_insp = d_insp_base + (building_count - 1) * 15
-else: d_insp = d_insp_base
+if "集合住宅" in b_type: 
+    d_insp = d_insp_base + (building_count - 1) * 15
+    insp_note = f"多棟聯合驗收 (共{building_count}棟)" # 多棟文字
+else: 
+    d_insp = d_insp_base
+    insp_note = "標準驗收流程" # 單棟文字
 
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
@@ -244,60 +245,44 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程 (更新邏輯)
+# [C] CPM 排程
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 p2_s = p1_e + timedelta(days=1)
 p2_e = get_end_date(p2_s, d_demo)
 p_soil_s = p2_e + timedelta(days=1)
 p_soil_e = get_end_date(p_soil_s, d_soil)
-
-# 4. 基礎開挖 (Start)
 p4_s = p_soil_e + timedelta(days=1)
 p4_e = get_end_date(p4_s, d_excav)
 
-# 5. 地下結構 (New Phase)
 if "逆打" in b_method or "雙順打" in b_method:
-    # 逆打：開挖與結構幾乎併行 (稍有延後)
-    lag_excav = int(30 * area_multiplier) # 假設開挖一個月後開始做結構
+    lag_excav = int(30 * area_multiplier) 
     p5_s = get_end_date(p4_s, lag_excav)
     p5_e = get_end_date(p5_s, d_struct_below)
-    
-    # 地上結構 (在逆打中，通常在1F版完成後，約開挖中期開始)
     lag_1f_slab = int(60 * area_multiplier)
-    p6_s = get_end_date(p4_s, lag_1f_slab) # 從開挖開始算
+    p6_s = get_end_date(p4_s, lag_1f_slab) 
     struct_note_below = f"併行 ({struct_below})"
-    struct_note_above = f"併行 (逆打)"
+    struct_note_above = f"併行 ({display_max_floor}F+{display_max_roof}R)"
 else:
-    # 順打：開挖完 -> 做地下結構 -> 做地上結構
     p5_s = p4_e + timedelta(days=1)
     p5_e = get_end_date(p5_s, d_struct_below)
-    
     p6_s = p5_e + timedelta(days=1)
     struct_note_below = f"要徑 ({struct_below})"
-    struct_note_above = f"順打接續"
+    struct_note_above = f"順打 ({display_max_floor}F+{display_max_roof}R)"
 
-# 6. 地上主體
 p6_e = get_end_date(p6_s, d_struct_body)
-
-# 其他工項
 lag_ext = int(d_struct_body * 0.5)
 p_ext_s = get_end_date(p6_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
-
 lag_mep = int(d_struct_body * 0.3) 
 p7_s = get_end_date(p6_s, lag_mep)
 p7_e = get_end_date(p7_s, d_mep)
-
 lag_finishing = int(d_struct_body * 0.6)
 p8_s = get_end_date(p6_s, lag_finishing)
 p8_e = get_end_date(p8_s, d_finishing)
-
 p9_s = p_ext_e - timedelta(days=30)
 p9_e = get_end_date(p9_s, d_insp)
-
-# 完工日需考慮所有結構結束
-final_project_finish = max(p5_e, p6_e, p_ext_e, p7_e, p8_e, p9_e)
+final_project_finish = max(p3_e, p4_e, p_ext_e, p5_e, p6_e, p7_e, p8_e, p9_e)
 calendar_days = (final_project_finish - p1_s).days
 duration_months = calendar_days / 30.44
 avg_ratio = 5/7 if exclude_sat and exclude_sun else 6/7 if exclude_sun else 1.0
@@ -329,13 +314,13 @@ schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": "要徑"},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": demo_note},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
-    {"工項階段": "4. 基礎開挖與擋土支撐", "需用工作天": d_excav, "Start": p4_s, "Finish": p4_e, "備註": excav_note}, # New Item
-    {"工項階段": "5. 地下結構工程", "需用工作天": d_struct_below, "Start": p5_s, "Finish": p5_e, "備註": struct_note_below}, # New Item
+    {"工項階段": "4. 基礎開挖與擋土支撐", "需用工作天": d_excav, "Start": p4_s, "Finish": p4_e, "備註": excav_note},
+    {"工項階段": "5. 地下結構工程", "需用工作天": d_struct_below, "Start": p5_s, "Finish": p5_e, "備註": struct_note_below},
     {"工項階段": "6. 地上主體結構", "需用工作天": d_struct_body, "Start": p6_s, "Finish": p6_e, "備註": struct_note_above},
     {"工項階段": "7. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "8. 內裝機電/管線", "需用工作天": d_mep, "Start": p7_s, "Finish": p7_e, "備註": "併行"},
     {"工項階段": "9. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p8_s, "Finish": p8_e, "備註": "併行"},
-    {"工項階段": "10. 驗收取得使照", "需用工作天": d_insp, "Start": p9_s, "Finish": p9_e, "備註": f"多棟聯合驗收"},
+    {"工項階段": "10. 驗收取得使照", "需用工作天": d_insp, "Start": p9_s, "Finish": p9_e, "備註": insp_note}, # 使用動態備註
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
@@ -348,12 +333,12 @@ st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始"
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
-    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#708090", "#A0522D", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"] # 增加顏色
+    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#708090", "#A0522D", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"]
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=550
+        hover_data={"需用工作天": True, "備註": True}, height=500
     )
     fig.update_traces(textposition='inside', insidetextanchor='start', width=0.6, marker_line_width=0, opacity=0.9, textfont=dict(size=15, family="Microsoft JhengHei"))
     fig.update_layout(
