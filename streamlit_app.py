@@ -3,12 +3,11 @@ import datetime
 from datetime import timedelta
 import pandas as pd
 import io
-# ⚠️ 請確保已安裝此套件: pip install plotly
 import plotly.express as px 
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.10", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.11", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -283,7 +282,6 @@ p8_e = get_end_date(p8_s, d_finishing)
 p9_s = p_ext_e - timedelta(days=30)
 p9_e = get_end_date(p9_s, d_insp)
 
-# [FIX] 修復 NameError: 移除 p3_e，確保變數正確
 final_project_finish = max(p5_e, p6_e, p_ext_e, p7_e, p8_e, p9_e)
 
 calendar_days = (final_project_finish - p1_s).days
@@ -332,7 +330,7 @@ sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
 
-# --- 8. 甘特圖 (大字體/細色塊) ---
+# --- 8. 甘特圖 ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
@@ -343,22 +341,22 @@ if not sched_display_df.empty:
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
         hover_data={"需用工作天": True, "備註": True}, height=550
     )
-    # [VISUAL UPDATE] Width=0.4, Text=15px
+    # [VISUAL UPDATE] Width=0.5, Text=16px
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='start', 
-        width=0.4, # 色塊縮小
+        width=0.5, # Bar width set to 0.5
         marker_line_width=0, 
         opacity=0.9, 
-        textfont=dict(size=16, family="Microsoft JhengHei") # 內部文字 16px
+        textfont=dict(size=16, family="Microsoft JhengHei") # Text inside bar (big)
     )
     fig.update_layout(
         plot_bgcolor='white', 
-        # [VISUAL UPDATE] 座標軸文字 18px
-        font=dict(family="Microsoft JhengHei", size=18, color="#2D2926"), 
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=18)), 
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=18)), 
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)), 
+        # [VISUAL UPDATE] Axis labels set to 14px (smaller than bar text)
+        font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), 
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), 
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), 
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
         margin=dict(l=20, r=20, t=60, b=20)
     )
     st.plotly_chart(fig, use_container_width=True)
