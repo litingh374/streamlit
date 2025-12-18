@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.9", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.1", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -283,9 +283,9 @@ sched_display_df = pd.DataFrame(schedule_data)
 sched_display_df = sched_display_df[sched_display_df["需用工作天"] > 0]
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
-st.table(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]])
+st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
 
-# --- 8. 甘特圖 ---
+# --- 8. 甘特圖 (視覺還原) ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
@@ -296,20 +296,20 @@ if not sched_display_df.empty:
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
         hover_data={"需用工作天": True, "備註": True}, height=500
     )
-    # [視覺優化] 寬度縮小為 0.3，字體放大為 16
+    # [還原] 寬度0.6，字體15px
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='start', 
-        width=0.3, 
+        width=0.6, 
         marker_line_width=0, 
         opacity=0.9, 
-        textfont=dict(size=16, family="Microsoft JhengHei")
+        textfont=dict(size=15, family="Microsoft JhengHei")
     )
     fig.update_layout(
         plot_bgcolor='white', 
-        font=dict(family="Microsoft JhengHei", size=16, color="#2D2926"), # 座標軸字體也放大為 16
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=16)), 
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=16)), 
+        font=dict(family="Microsoft JhengHei", size=15, color="#2D2926"), 
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=15)), 
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=15)), 
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=13)), 
         margin=dict(l=20, r=20, t=60, b=20)
     )
