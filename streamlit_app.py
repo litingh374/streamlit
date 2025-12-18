@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v4.6", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v4.7", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -43,14 +43,21 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
+        # 1. 建物類型：新增「集合住宅」
+        b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
+        
+        # 動態顯示棟數輸入 (只有選集合住宅才出現)
+        if "集合住宅" in b_type:
+            building_count = st.number_input("建物棟數", min_value=2, value=3, step=1)
+        else:
+            building_count = 1
+
         b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
         foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
     
     with col2:
-        # 施工方式：這是本次更新的核心變數
-        b_method = st.selectbox("施工方式", ["順打工法 (標準)", "逆打工法 (上下同步)", "雙順打工法 (部分同步)"])
+        b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
         excavation_system = st.selectbox("開挖擋土系統 (整合)", [
             "連續壁 + 型鋼內支撐 (標準)",
             "連續壁 + 地錨 (開挖動線佳)",
@@ -91,7 +98,18 @@ with st.expander("點擊展開/隱藏 日期設定"):
 # --- 5. 核心運算邏輯 ---
 area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
-k_usage = {"住宅": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
+
+# 用途係數
+# 集合住宅基本係數同住宅，但會受棟數影響
+k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
+
+# 多棟調整係數：每多一棟，機電/裝修/結構 增加 3% 的協調緩衝 (非線性累加，因為可分區併行)
+multi_building_factor = 1.0
+if "集合住宅" in b_type and building_count > 1:
+    multi_building_factor = 1.0 + (building_count - 1) * 0.03
+
+k_usage = k_usage_base * multi_building_factor
+
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 excavation_map = {
@@ -115,7 +133,6 @@ if "全套管基樁" in foundation_type: foundation_add = 90
 elif "樁基礎" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
 
-# 地下室工期 (如果逆打，開挖速度通常較慢，係數給 1.15，但因為同步施工，總體還是快)
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add) * area_multiplier)
 
@@ -123,7 +140,13 @@ d_struct_body = int(floors_up * struct_map.get(b_struct, 14) * area_multiplier *
 d_ext_wall = int(floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
 d_mep = int((60 + floors_up * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + floors_up * 3) * area_multiplier * k_usage)
-d_insp = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
+
+# 驗收階段：集合住宅每多一棟，驗收期增加 15 天
+d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
+if "集合住宅" in b_type:
+    d_insp = d_insp_base + (building_count - 1) * 15
+else:
+    d_insp = d_insp_base
 
 # [B] 日期推算函數
 def get_end_date(start_date, days_needed):
@@ -137,7 +160,7 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程 (v4.6 逆打同步施工邏輯)
+# [C] CPM 排程
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 
@@ -147,25 +170,19 @@ p2_e = get_end_date(p2_s, d_demo)
 p_soil_s = p2_e + timedelta(days=1)
 p_soil_e = get_end_date(p_soil_s, d_soil)
 
-# 4. 基礎/地下室 (開工)
 p3_s = p_soil_e + timedelta(days=1)
 p3_e = get_end_date(p3_s, d_sub)
 
-# 5. 地上結構 (判斷工法)
 if "逆打" in b_method or "雙順打" in b_method:
-    # 逆打/雙順打：地下室開工後，需先施作一樓樓板 (假設約 60 天含整地/構台)
-    # 之後 地上 與 地下 同步進行
     lag_1f_slab = int(60 * area_multiplier)
     p4_s = get_end_date(p3_s, lag_1f_slab)
     struct_note = "併行 (逆打同步)"
 else:
-    # 順打：地下室做完才做地上
     p4_s = p3_e + timedelta(days=1)
     struct_note = "要徑 (順打接續)"
 
 p4_e = get_end_date(p4_s, d_struct_body)
 
-# 其他工項 (依附於結構體)
 lag_ext = int(d_struct_body * 0.5)
 p_ext_s = get_end_date(p4_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
@@ -178,17 +195,12 @@ lag_finishing = int(d_struct_body * 0.6)
 p6_s = get_end_date(p4_s, lag_finishing)
 p6_e = get_end_date(p6_s, d_finishing)
 
-# 8. 驗收使照 (外牆前 30 天)
 p7_s = p_ext_e - timedelta(days=30)
 p7_e = get_end_date(p7_s, d_insp)
 
-# 最終完工日 (逆打時，地下室可能會比地上慢，所以必須納入 p3_e 比較)
 final_project_finish = max(p3_e, p4_e, p_ext_e, p5_e, p6_e, p7_e)
-
 calendar_days = (final_project_finish - p1_s).days
 duration_months = calendar_days / 30.44
-# 這裡顯示的是邏輯上需要的總工作天跨度，而非單純累加
-# 簡單估算：總日曆天數 * (工作天/日曆天比例)
 avg_ratio = 5/7 if exclude_sat and exclude_sun else 6/7 if exclude_sun else 1.0
 effective_work_days = int(calendar_days * avg_ratio)
 
@@ -203,8 +215,6 @@ with res_col3:
     d_date = final_project_finish if enable_date else "日期未定"
     st.markdown(f"<div class='metric-container' style='border-left-color:{c_color};'><small>預計完工日期</small><br><b style='color:{c_color};'>{d_date}</b></div>", unsafe_allow_html=True)
 with res_col4: 
-    # 計算逆打節省時間：如果順打，結束時間大約是 p3_e + d_struct... 
-    # 這裡顯示簡單的重疊效益
     if "逆打" in b_method or "雙順打" in b_method:
         overlap_structure = (p3_e - p4_s).days
         saved_msg = f"逆打縮短約 {int(max(0, overlap_structure)/30)} 個月"
@@ -223,7 +233,7 @@ schedule_data = [
     {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行 (結構50%)"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
     {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
-    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": "外牆前1個月啟動"},
+    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": f"外牆前1個月 (共{building_count}棟)"},
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
@@ -236,42 +246,15 @@ st.table(sched_display_df[["工項階段", "需用工作天", "預計開始", "�
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
-    
     professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"]
-    
     fig = px.timeline(
-        gantt_df, 
-        x_start="Start", 
-        x_end="Finish", 
-        y="工項階段", 
-        color="工項階段",
-        color_discrete_sequence=professional_colors,
-        text="工項階段", 
-        title=f"【{project_name}】工程進度模擬 ({b_method})",
-        hover_data={"需用工作天": True, "備註": True},
-        height=480
+        gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
+        color_discrete_sequence=professional_colors, text="工項階段", 
+        title=f"【{project_name}】工程進度模擬 ({b_type})",
+        hover_data={"需用工作天": True, "備註": True}, height=480
     )
-    
-    fig.update_traces(
-        textposition='inside', 
-        insidetextanchor='start', 
-        width=0.5, 
-        marker_line_width=0, 
-        opacity=0.9,
-        textfont=dict(size=14, color="white", family="Microsoft JhengHei") 
-    )
-    
-    fig.update_layout(
-        plot_bgcolor='white',
-        font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"),
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)),
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)),
-        margin=dict(l=20, r=20, t=60, b=20),
-        uniformtext_minsize=10, 
-        uniformtext_mode='hide'
-    )
-    
+    fig.update_traces(textposition='inside', insidetextanchor='start', width=0.5, marker_line_width=0, opacity=0.9, textfont=dict(size=14, color="white", family="Microsoft JhengHei"))
+    fig.update_layout(plot_bgcolor='white', font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), margin=dict(l=20, r=20, t=60, b=20), uniformtext_minsize=10, uniformtext_mode='hide')
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("尚無工期資料，請檢查參數設定。")
@@ -280,10 +263,15 @@ else:
 st.divider()
 st.subheader("📥 導出詳細報表")
 
+# 如果是集合住宅，記錄棟數
+b_type_str = b_type
+if "集合住宅" in b_type:
+    b_type_str = f"{b_type} (共 {building_count} 棟)"
+
 report_rows = [
     ["項目名稱", project_name],
     ["[ 建築規模與條件 ]", ""],
-    ["建物類型", b_type], ["結構型式", b_struct], ["外牆型式", ext_wall],
+    ["建物類型", b_type_str], ["結構型式", b_struct], ["外牆型式", ext_wall],
     ["基礎型式", foundation_type], ["施工方式", b_method], ["開挖擋土", excavation_system],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
     ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
@@ -311,19 +299,16 @@ buffer = io.BytesIO()
 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
     df_export.to_excel(writer, index=False, sheet_name='詳細工期報告')
     worksheet = writer.sheets['詳細工期報告']
-    
     header_fill = PatternFill(start_color="2D2926", end_color="2D2926", fill_type="solid")
     header_font = Font(name='微軟正黑體', size=12, bold=True, color="FFB81C")
     section_fill = PatternFill(start_color="EFEFEF", end_color="EFEFEF", fill_type="solid")
     section_font = Font(name='微軟正黑體', size=11, bold=True)
     highlight_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
     normal_font = Font(name='微軟正黑體', size=11)
-    
     worksheet.column_dimensions['A'].width = 30
     worksheet.column_dimensions['B'].width = 20
     worksheet.column_dimensions['C'].width = 30
     worksheet.column_dimensions['D'].width = 25
-
     for row_idx, row in enumerate(worksheet.iter_rows(min_row=1, max_row=worksheet.max_row), 1):
         for cell in row:
             cell.font = normal_font
