@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v4.5", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v4.6", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -49,7 +49,8 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
         foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
     
     with col2:
-        b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
+        # 施工方式：這是本次更新的核心變數
+        b_method = st.selectbox("施工方式", ["順打工法 (標準)", "逆打工法 (上下同步)", "雙順打工法 (部分同步)"])
         excavation_system = st.selectbox("開挖擋土系統 (整合)", [
             "連續壁 + 型鋼內支撐 (標準)",
             "連續壁 + 地錨 (開挖動線佳)",
@@ -113,11 +114,13 @@ foundation_add = 0
 if "全套管基樁" in foundation_type: foundation_add = 90
 elif "樁基礎" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
-d_sub = int(((floors_down * (45 if b_method == "順打工法" else 55) * excav_multiplier) + foundation_add) * area_multiplier)
+
+# 地下室工期 (如果逆打，開挖速度通常較慢，係數給 1.15，但因為同步施工，總體還是快)
+sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
+d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add) * area_multiplier)
 
 d_struct_body = int(floors_up * struct_map.get(b_struct, 14) * area_multiplier * k_usage)
 d_ext_wall = int(floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
-
 d_mep = int((60 + floors_up * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + floors_up * 3) * area_multiplier * k_usage)
 d_insp = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
@@ -134,7 +137,7 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程 (v4.5 使照優化邏輯)
+# [C] CPM 排程 (v4.6 逆打同步施工邏輯)
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 
@@ -144,12 +147,25 @@ p2_e = get_end_date(p2_s, d_demo)
 p_soil_s = p2_e + timedelta(days=1)
 p_soil_e = get_end_date(p_soil_s, d_soil)
 
+# 4. 基礎/地下室 (開工)
 p3_s = p_soil_e + timedelta(days=1)
 p3_e = get_end_date(p3_s, d_sub)
 
-p4_s = p3_e + timedelta(days=1)
+# 5. 地上結構 (判斷工法)
+if "逆打" in b_method or "雙順打" in b_method:
+    # 逆打/雙順打：地下室開工後，需先施作一樓樓板 (假設約 60 天含整地/構台)
+    # 之後 地上 與 地下 同步進行
+    lag_1f_slab = int(60 * area_multiplier)
+    p4_s = get_end_date(p3_s, lag_1f_slab)
+    struct_note = "併行 (逆打同步)"
+else:
+    # 順打：地下室做完才做地上
+    p4_s = p3_e + timedelta(days=1)
+    struct_note = "要徑 (順打接續)"
+
 p4_e = get_end_date(p4_s, d_struct_body)
 
+# 其他工項 (依附於結構體)
 lag_ext = int(d_struct_body * 0.5)
 p_ext_s = get_end_date(p4_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
@@ -162,31 +178,39 @@ lag_finishing = int(d_struct_body * 0.6)
 p6_s = get_end_date(p4_s, lag_finishing)
 p6_e = get_end_date(p6_s, d_finishing)
 
-# 8. 驗收使照 (修正：外牆完成前 30 天開始)
-# 邏輯：p7_s = 外牆結束日 - 30天
+# 8. 驗收使照 (外牆前 30 天)
 p7_s = p_ext_e - timedelta(days=30)
 p7_e = get_end_date(p7_s, d_insp)
 
-# 最終完工日 (取所有工項的最晚結束日)
-final_project_finish = max(p4_e, p_ext_e, p5_e, p6_e, p7_e)
+# 最終完工日 (逆打時，地下室可能會比地上慢，所以必須納入 p3_e 比較)
+final_project_finish = max(p3_e, p4_e, p_ext_e, p5_e, p6_e, p7_e)
 
 calendar_days = (final_project_finish - p1_s).days
 duration_months = calendar_days / 30.44
-sum_work_days = d_prep + d_demo + d_soil + d_sub + d_struct_body + d_ext_wall + d_mep + d_finishing + d_insp
+# 這裡顯示的是邏輯上需要的總工作天跨度，而非單純累加
+# 簡單估算：總日曆天數 * (工作天/日曆天比例)
+avg_ratio = 5/7 if exclude_sat and exclude_sun else 6/7 if exclude_sun else 1.0
+effective_work_days = int(calendar_days * avg_ratio)
 
 # --- 6. 預估結果分析 ---
 st.divider()
 st.subheader("📊 預估結果分析")
 res_col1, res_col2, res_col3, res_col4 = st.columns(4)
-with res_col1: st.markdown(f"<div class='metric-container'><small>累計工項人天</small><br><b>{sum_work_days} 天</b></div>", unsafe_allow_html=True)
+with res_col1: st.markdown(f"<div class='metric-container'><small>專案總有效工期</small><br><b>{effective_work_days} 天</b></div>", unsafe_allow_html=True)
 with res_col2: st.markdown(f"<div class='metric-container'><small>專案日曆天 / 月數</small><br><b>{calendar_days} 天 / {duration_months:.1f} 月</b></div>", unsafe_allow_html=True)
 with res_col3: 
     c_color = "#FF4438" if enable_date else "#2D2926"
     d_date = final_project_finish if enable_date else "日期未定"
     st.markdown(f"<div class='metric-container' style='border-left-color:{c_color};'><small>預計完工日期</small><br><b style='color:{c_color};'>{d_date}</b></div>", unsafe_allow_html=True)
 with res_col4: 
-    overlap = (p4_e - p5_s).days
-    st.markdown(f"<div class='metric-container'><small>併行施工縮短</small><br><b>約 {int(overlap/30)} 個月</b></div>", unsafe_allow_html=True)
+    # 計算逆打節省時間：如果順打，結束時間大約是 p3_e + d_struct... 
+    # 這裡顯示簡單的重疊效益
+    if "逆打" in b_method or "雙順打" in b_method:
+        overlap_structure = (p3_e - p4_s).days
+        saved_msg = f"逆打縮短約 {int(max(0, overlap_structure)/30)} 個月"
+    else:
+        saved_msg = "採用順打工法"
+    st.markdown(f"<div class='metric-container'><small>工法效益分析</small><br><b>{saved_msg}</b></div>", unsafe_allow_html=True)
 
 # --- 7. 詳細進度拆解表 ---
 st.subheader("📅 詳細工項進度建議表")
@@ -194,12 +218,12 @@ schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": "要徑"},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": "要徑"},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
-    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": "要徑"},
-    {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": "要徑"},
+    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": f"要徑 ({b_method[:2]})"},
+    {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": struct_note},
     {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行 (結構50%)"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
     {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
-    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": "外牆完成前1個月啟動"},
+    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": "外牆前1個月啟動"},
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
@@ -223,7 +247,7 @@ if not sched_display_df.empty:
         color="工項階段",
         color_discrete_sequence=professional_colors,
         text="工項階段", 
-        title=f"【{project_name}】工程進度模擬",
+        title=f"【{project_name}】工程進度模擬 ({b_method})",
         hover_data={"需用工作天": True, "備註": True},
         height=480
     )
@@ -260,11 +284,11 @@ report_rows = [
     ["項目名稱", project_name],
     ["[ 建築規模與條件 ]", ""],
     ["建物類型", b_type], ["結構型式", b_struct], ["外牆型式", ext_wall],
-    ["基礎型式", foundation_type], ["開挖擋土", excavation_system], ["地質改良", soil_improvement],
+    ["基礎型式", foundation_type], ["施工方式", b_method], ["開挖擋土", excavation_system],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
     ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
     ["", ""],
-    ["[ 進度分析 (採併行施工邏輯) ]", ""]
+    ["[ 進度分析 ]", ""]
 ]
 
 for item in schedule_data:
@@ -276,7 +300,7 @@ for item in schedule_data:
 report_rows.extend([
     ["", "", "", ""],
     ["[ 總結結果 ]", "", "", ""],
-    ["累計工項人天", f"{sum_work_days} 天", "", ""],
+    ["專案總有效工期", f"{effective_work_days} 天", "", ""],
     ["專案總日曆天數", f"{calendar_days} 天", "", ""],
     ["預估完工日期", str(final_project_finish if enable_date else "日期未定"), "", ""]
 ])
