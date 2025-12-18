@@ -3,11 +3,11 @@ import datetime
 from datetime import timedelta
 import pandas as pd
 import io
-import plotly.express as px # 新增圖表套件
+import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v4.0", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v4.2", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -183,43 +183,83 @@ schedule_data = [
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
     {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": "要徑"},
     {"工項階段": "5. 地上主體結構", "需用工作天": d_super, "Start": p4_s, "Finish": p4_e, "備註": "要徑"},
-    {"工項階段": "6. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行 (結構30%)"},
-    {"工項階段": "7. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行 (結構60%)"},
+    {"工項階段": "6. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
+    {"工項階段": "7. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
     {"工項階段": "8. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": "完工後進行"},
 ]
 
-# 製作表格顯示用的 DataFrame (處理日期格式)
 sched_display_df = pd.DataFrame(schedule_data)
-sched_display_df = sched_display_df[sched_display_df["需用工作天"] > 0] # 過濾天數為0的
+sched_display_df = sched_display_df[sched_display_df["需用工作天"] > 0]
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.table(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]])
 
-# --- 8. 甘特圖繪製 ---
-st.subheader("📊 專案進度甘特圖 (Gantt Chart)")
-
-# 準備甘特圖數據 (即使未啟用日期，也使用模擬日期來繪圖)
-gantt_df = pd.DataFrame(schedule_data)
-gantt_df = gantt_df[gantt_df["需用工作天"] > 0] # 過濾
-
-# 使用 Plotly 繪製
-fig = px.timeline(
-    gantt_df, 
-    x_start="Start", 
-    x_end="Finish", 
-    y="工項階段", 
-    color="工項階段",
-    title=f"【{project_name}】工程進度模擬",
-    hover_data={"需用工作天": True, "備註": True},
-    height=400
-)
-fig.update_yaxes(autorange="reversed") # 讓順序從上到下
-fig.update_layout(xaxis_title="日期 (模擬/實際)", yaxis_title="工程階段")
-
-# 顯示圖表
-st.plotly_chart(fig, use_container_width=True)
-if not enable_date:
-    st.caption("⚠️ 目前未啟用「開工日期」，上圖為以今日為基準之模擬排程。")
+# --- 8. 甘特圖 (美編優化版) ---
+st.subheader("📊 專案進度甘特圖")
+if not sched_display_df.empty:
+    gantt_df = sched_display_df.copy()
+    
+    # 定義工程莫蘭迪色系 (不刺眼的專業配色)
+    professional_colors = [
+        "#708090", # SlateGray (前期)
+        "#A52A2A", # Brown (拆除)
+        "#8B4513", # SaddleBrown (地質)
+        "#2F4F4F", # DarkSlateGray (地下室)
+        "#4682B4", # SteelBlue (主體)
+        "#5F9EA0", # CadetBlue (機電)
+        "#2E8B57", # SeaGreen (裝修)
+        "#DAA520"  # GoldenRod (驗收)
+    ]
+    
+    fig = px.timeline(
+        gantt_df, 
+        x_start="Start", 
+        x_end="Finish", 
+        y="工項階段", 
+        color="工項階段", # 依然依階段上色
+        color_discrete_sequence=professional_colors, # 使用自訂色系
+        title=f"【{project_name}】工程進度模擬",
+        hover_data={"需用工作天": True, "備註": True},
+        height=450 # 稍微調高一點
+    )
+    
+    # 美化設定
+    fig.update_traces(
+        width=0.5, # 色塊變瘦 (0~1之間)
+        marker_line_width=0, # 移除色塊邊框
+        opacity=0.9
+    )
+    
+    fig.update_layout(
+        plot_bgcolor='white', # 背景改為全白
+        font=dict(
+            family="Microsoft JhengHei", # 指定微軟正黑體
+            size=14,  # 整體字體加大
+            color="#2D2926"
+        ),
+        xaxis=dict(
+            title="工程期程",
+            showgrid=True, # 顯示垂直格線
+            gridcolor='#EEE', # 格線顏色淡灰
+            tickfont=dict(size=14) # X軸日期字體加大
+        ),
+        yaxis=dict(
+            title="",
+            autorange="reversed", # 順序從上到下
+            tickfont=dict(size=14, family="Microsoft JhengHei") # Y軸項目字體加大
+        ),
+        legend=dict(
+            orientation="h", # 圖例改為水平
+            yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=12)
+        ),
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("尚無工期資料，請檢查參數設定。")
 
 # --- 9. Excel 導出 ---
 st.divider()
@@ -252,6 +292,7 @@ report_rows.extend([
 
 df_export = pd.DataFrame(report_rows, columns=["項目", "數值/天數", "日期區間", "備註"])
 buffer = io.BytesIO()
+
 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
     df_export.to_excel(writer, index=False, sheet_name='詳細工期報告')
     worksheet = writer.sheets['詳細工期報告']
@@ -287,4 +328,9 @@ with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 cell.fill = highlight_fill
 
 excel_data = buffer.getvalue()
-st.download_button(label="📊 下載專業版 Excel 報表", data=excel_data, file_name=f"{project_name}_工期分析.xlsx")
+st.download_button(
+    label="📊 下載專業版 Excel 報表",
+    data=excel_data,
+    file_name=f"{project_name}_工期分析.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
