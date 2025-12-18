@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.1", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.2", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -81,14 +81,16 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     dim_c1, dim_c2, dim_c3 = st.columns(3)
     
     with dim_c1:
-        base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
+        # [修改] min_value=0.0，允許輸入 0
+        base_area_m2 = st.number_input("基地面積 (m²)", min_value=0.0, value=1652.89, step=10.0)
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
         
     est_floors = 18 
     est_fa_m2 = base_area_m2 * est_floors * 0.7 
     with dim_c2:
-        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=1.0, value=est_fa_m2, step=100.0)
+        # [修改] min_value=0.0，允許輸入 0
+        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=0.0, value=est_fa_m2, step=100.0)
         total_fa_ping = total_fa_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{total_fa_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
@@ -285,7 +287,7 @@ sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
 
-# --- 8. 甘特圖 (視覺還原) ---
+# --- 8. 甘特圖 (字體放大版) ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
@@ -294,7 +296,7 @@ if not sched_display_df.empty:
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=500
+        hover_data={"需用工作天": True, "備註": True}, height=500 
     )
     # [還原] 寬度0.6，字體15px
     fig.update_traces(
