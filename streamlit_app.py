@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.1", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v5.2", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -63,7 +63,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         ])
         
     with col3:
-        # 修改：細分基地現況選項
         site_condition = st.selectbox("基地現況", [
             "純空地 (無須拆除)", 
             "有舊建物 (無地下室)", 
@@ -78,6 +77,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     # === 下半部：規模量體 ===
     st.markdown("#### 2. 規模量體設定")
     
+    # 第一列：面積相關 (基地面積、總樓地板面積、地下層數)
     dim_c1, dim_c2, dim_c3 = st.columns(3)
     
     with dim_c1:
@@ -85,16 +85,25 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
         
+    # [New] 總樓地板面積
+    # 預先計算一個參考值 (假設 建蔽率60% * 層數 * 1.15公設)
+    # 這裡我們需要先取得層數資訊，但因為 Streamlit 是由上而下執行，
+    # 為了 UX 體驗，我們在此處先給一個預設值，若用戶有修改下方的層數，這個值不會自動變動，避免覆蓋用戶輸入
+    # 但為了方便，我們提供一個按鈕或提示
+    
+    # 暫時使用 session_state 來儲存層數以便估算，若無則預設
+    est_floors = 15 + 3 # 假設值
+    est_fa_ping = base_area_ping * est_floors * 0.7 
+    
     with dim_c2:
-        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
-        
-    with dim_c3:
-        if "自訂" in prep_type_select:
-            prep_days_custom = st.number_input("輸入自訂前置天數", min_value=0, value=120)
-        else:
-            prep_days_custom = None
-            st.info(f"依類型自動設定：{prep_type_select}")
+        total_fa_ping = st.number_input("總樓地板面積 (坪)", min_value=1.0, value=est_fa_ping, step=50.0, help="包含地下室與屋突之總樓地板面積，影響機電裝修工期甚鉅。")
+        total_fa_m2 = total_fa_ping / 0.3025
+        st.markdown(f"<div class='area-display'>換算：{total_fa_m2:,.2f} m²</div>", unsafe_allow_html=True)
 
+    with dim_c3:
+        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
+
+    # 第二列：地上層數與前置
     st.write("") 
     
     building_details_df = None
@@ -119,22 +128,33 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
                 key="building_editor", height=150
             )
         with t_col2:
-            st.caption("👈 請在左側表格新增或修改各棟樓層。")
+            st.caption("👈 請在左側表格編輯各棟樓層，系統取最高樓層計算結構。")
+            
+            # 自訂前置天數放這裡
+            if "自訂" in prep_type_select:
+                prep_days_custom = st.number_input("輸入自訂前置天數", min_value=0, value=120)
+            else:
+                prep_days_custom = None
+                
             if not edited_df.empty:
                 max_floors_up = int(edited_df["地上層數"].max())
                 building_count = len(edited_df)
                 building_details_df = edited_df
-                st.success(f"系統偵測共 **{building_count}** 棟，將以最高的 **{max_floors_up} F** 作為結構要徑計算基準。")
             else:
-                st.error("⚠️ 請至少輸入一棟資料")
                 max_floors_up = 15
     else:
-        st.markdown("##### 🏢 地上層數設定")
+        # 單棟模式
+        st.markdown("##### 🏢 地上層數與前置設定")
         s_col1, s_col2 = st.columns([1, 2])
         with s_col1:
             floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
-        max_floors_up = floors_up
-        building_count = 1
+            max_floors_up = floors_up
+            building_count = 1
+        with s_col2:
+            if "自訂" in prep_type_select:
+                prep_days_custom = st.number_input("輸入自訂前置天數", min_value=0, value=120)
+            else:
+                prep_days_custom = None
 
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
@@ -150,7 +170,20 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 # --- 5. 核心運算邏輯 ---
-area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
+# 面積係數邏輯微調：加入總樓地板面積的考量 (若總樓地非常大，工期略增)
+# 基準面積係數 (來自基地面積)
+base_area_factor = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
+
+# 規模係數 (來自總樓地板)
+# 假設標準大樓約 3000 坪，每增加 1000 坪，整體裝修機電壓力增加 1%
+vol_factor = 1.0
+if total_fa_ping > 3000:
+    vol_factor = 1 + ((total_fa_ping - 3000) / 5000) * 0.05
+    vol_factor = min(vol_factor, 1.2) # 上限 1.2
+
+# 綜合面積係數 (以基地為主，樓地板為輔)
+area_multiplier = base_area_factor * vol_factor
+
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 multi_building_factor = 1.0
@@ -172,19 +205,11 @@ if "自訂" in prep_type_select and prep_days_custom is not None:
 else:
     d_prep = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
 
-# 2. 拆除工程 (細分邏輯)
-if "純空地" in site_condition:
-    d_demo = 0
-    demo_note = "純空地"
-elif "有舊建物 (含舊地下室)" in site_condition:
-    d_demo = int(100 * area_multiplier) # 地上+地下拆除最久
-    demo_note = "全棟拆除(含地下室)"
-elif "有舊建物 (無地下室)" in site_condition:
-    d_demo = int(45 * area_multiplier)
-    demo_note = "地上拆除"
-else: # 僅存舊地下室
-    d_demo = int(60 * area_multiplier)
-    demo_note = "地下結構破除"
+# 拆除
+if "純空地" in site_condition: d_demo = 0; demo_note = "純空地"
+elif "有舊建物 (含舊地下室)" in site_condition: d_demo = int(100 * area_multiplier); demo_note = "全棟拆除(含地下室)"
+elif "有舊建物 (無地下室)" in site_condition: d_demo = int(45 * area_multiplier); demo_note = "地上拆除"
+else: d_demo = int(60 * area_multiplier); demo_note = "地下結構破除"
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
@@ -205,7 +230,7 @@ if "集合住宅" in b_type:
 else:
     d_insp = d_insp_base
 
-# [B] 日期推算
+# [B] 日期推算函數
 def get_end_date(start_date, days_needed):
     curr = start_date
     added = 0
@@ -327,8 +352,9 @@ report_rows = [
     ["各棟配置", details_str],
     ["結構型式", b_struct], ["外牆型式", ext_wall],
     ["基礎型式", foundation_type], ["施工方式", b_method], ["開挖擋土", excavation_system],
-    ["基地現況", site_condition], ["地質改良", soil_improvement], # 修正: 寫入新變數
+    ["基地現況", site_condition], ["地質改良", soil_improvement],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
+    ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"], # 新增報表項目
     ["樓層規模", f"地下 {floors_down} B / 最高地上 {max_floors_up} F"],
     ["", ""],
     ["[ 進度分析 ]", ""]
