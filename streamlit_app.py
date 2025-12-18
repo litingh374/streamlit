@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.7", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v5.9", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -285,36 +285,32 @@ sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.table(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]])
 
-# --- 8. 甘特圖 (字體放大版) ---
+# --- 8. 甘特圖 ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
     professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"]
-    
-    # 增加圖表高度至 550 (容納大字)
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=550 
+        hover_data={"需用工作天": True, "備註": True}, height=500
     )
-    
-    # 字體放大至 16px，Bar 寬度 0.75
+    # [視覺優化] width=0.5, font size=13
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='start', 
-        width=0.75, 
+        width=0.5, 
         marker_line_width=0, 
         opacity=0.9, 
-        textfont=dict(size=16, family="Microsoft JhengHei")
+        textfont=dict(size=13, family="Microsoft JhengHei")
     )
-    
     fig.update_layout(
         plot_bgcolor='white', 
-        font=dict(family="Microsoft JhengHei", size=15, color="#2D2926"), # 座標軸字體 15px
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=15)), 
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=15)), 
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=13)), 
+        font=dict(family="Microsoft JhengHei", size=13, color="#2D2926"), # 座標軸也統一為 13px
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=13)), 
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=13)), 
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
         margin=dict(l=20, r=20, t=60, b=20)
     )
     st.plotly_chart(fig, use_container_width=True)
