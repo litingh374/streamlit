@@ -6,7 +6,7 @@ import io
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v3.6", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v3.7", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -43,7 +43,8 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
     
     # 第一欄：建物本體
     with col1:
-        b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "百貨", "廠房", "醫院"])
+        # 新增「飯店」選項
+        b_type = st.selectbox("建物類型", ["住宅", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
         b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板"])
         foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (工期較長)", "獨立基腳"])
@@ -51,8 +52,7 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
     # 第二欄：工法與大地工程
     with col2:
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-        # 新增：開挖擋土型式
-        retaining_wall = st.selectbox("開挖擋土型式 (New)", ["連續壁 (工期長/止水佳)", "預壘樁/排樁 (工期中)", "鋼板樁 (工期快/淺開挖)"])
+        retaining_wall = st.selectbox("開挖擋土型式", ["連續壁 (工期長/止水佳)", "預壘樁/排樁 (工期中)", "鋼板樁 (工期快/淺開挖)"])
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
         prep_type = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
@@ -83,9 +83,17 @@ area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
-k_usage = {"住宅": 1.0, "辦公大樓": 1.1, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 
-# 擋土型式係數 (New)
+# 更新建物用途係數，加入「飯店」
+k_usage = {
+    "住宅": 1.0, 
+    "辦公大樓": 1.1, 
+    "飯店": 1.4,       # 飯店係數較高，因隔間多、機電複雜
+    "百貨": 1.3, 
+    "廠房": 0.8, 
+    "醫院": 1.4
+}.get(b_type, 1.0)
+
 rw_map = {"連續壁 (工期長/止水佳)": 1.0, "預壘樁/排樁 (工期中)": 0.85, "鋼板樁 (工期快/淺開挖)": 0.7}
 rw_multiplier = rw_map.get(retaining_wall, 1.0)
 
@@ -94,15 +102,15 @@ d_prep = 120 if "一般" in prep_type else 210 if "鄰捷運" in prep_type else 
 d_demo = int((45 if "舊建物" in site_condition else 80 if "舊地下室" in site_condition else 0) * area_multiplier)
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
-# 地下室工程：受「基礎型式」與「擋土型式」雙重影響
 foundation_add = 60 if "樁基礎" in foundation_type else 0
-# 基本地下室週期 * 擋土係數 + 額外打樁天數
 d_sub = int((floors_down * (45 if b_method == "順打工法" else 55) * rw_multiplier + foundation_add) * area_multiplier)
 
 d_super = int(floors_up * struct_map.get(b_struct, 14) * area_multiplier * ext_wall_multiplier * k_usage)
 d_mep = int((60 + floors_up * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + floors_up * 3) * area_multiplier * k_usage)
-d_insp = 150 if b_type in ["百貨", "醫院"] else 90
+
+# 驗收天數邏輯更新：飯店比照百貨/醫院
+d_insp = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
 
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
