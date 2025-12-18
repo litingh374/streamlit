@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.16", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.17", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -54,7 +54,8 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
     
     with col2:
-        foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
+        # [New Option] 加入 "壁樁 (Barrette)"
+        foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "壁樁 (Barrette)", "微型樁 (工期短)", "獨立基腳"])
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
         excavation_system = st.selectbox("開挖擋土系統", [
             "連續壁 + 型鋼內支撐 (標準)",
@@ -78,7 +79,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         else:
             prep_days_custom = None
         
-        # [New Feature] 納入工項勾選
         st.markdown("**納入工項 (Scope)**")
         scope_options = st.multiselect(
             "請勾選本案包含之項目",
@@ -216,8 +216,10 @@ else: d_demo = int(60 * area_multiplier); demo_note = "地下結構破除"
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
+# [Updated Foundation Logic]
 foundation_add = 0
-if "全套管基樁" in foundation_type: foundation_add = 90
+if "全套管" in foundation_type: foundation_add = 90
+elif "壁樁" in foundation_type: foundation_add = 80 # 壁樁加成
 elif "樁基礎" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
 
@@ -244,23 +246,17 @@ d_struct_below = int(((floors_down * 35) + foundation_add) * area_multiplier)
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
 d_ext_wall = int(calc_floors_struct * 12 * area_multiplier * ext_wall_multiplier * k_usage)
 
-# [Key Update: Conditional Durations]
 if "機電管線工程" in scope_options:
     d_mep = int((60 + calc_floors_struct * 4) * area_multiplier * k_usage)
-else:
-    d_mep = 0
+else: d_mep = 0
 
 if "室內裝修工程" in scope_options:
-    # 稍微調整裝修公式，扣除掉原本包含景觀的部分
     d_fit_out = int((60 + calc_floors_struct * 3) * area_multiplier * k_usage)
-else:
-    d_fit_out = 0
+else: d_fit_out = 0
 
 if "景觀工程" in scope_options:
-    # 景觀通常與基地大小有關，而非樓層
     d_landscape = int(45 * base_area_factor) 
-else:
-    d_landscape = 0
+else: d_landscape = 0
 
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
 if "集合住宅" in b_type: 
@@ -283,7 +279,7 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程 (13 Items)
+# [C] CPM 排程
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 p2_s = p1_e + timedelta(days=1)
@@ -332,13 +328,13 @@ lag_mep = int(d_struct_body * 0.3)
 p10_s = get_end_date(p8_s, lag_mep)
 p10_e = get_end_date(p10_s, d_mep)
 
-# 11. 裝修 (通常機電後段進場)
+# 11. 裝修
 lag_fit_out = int(d_struct_body * 0.6)
 p11_s = get_end_date(p8_s, lag_fit_out)
 p11_e = get_end_date(p11_s, d_fit_out)
 
-# 12. 景觀 (外牆拆架後)
-p12_s = p_ext_e - timedelta(days=15) # 外牆快拆完時進場
+# 12. 景觀
+p12_s = p_ext_e - timedelta(days=15) 
 p12_e = get_end_date(p12_s, d_landscape)
 
 # 13. 驗收
