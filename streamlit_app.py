@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.4", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v5.5", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -47,20 +47,17 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
     with col1:
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
-        
-        # [New] 拆分地上與地下結構
         st.markdown("**結構型式**")
         c1_1, c1_2 = st.columns(2)
-        with c1_1:
-            struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
-        with c1_2:
-            struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0, help="地下室通常為RC或SRC")
-
+        with c1_1: struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
+        with c1_2: struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
     
     with col2:
         foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
+        
+        # 開挖系統與輔助措施
         excavation_system = st.selectbox("開挖擋土系統", [
             "連續壁 + 型鋼內支撐 (標準)",
             "連續壁 + 地錨 (開挖動線佳)",
@@ -70,12 +67,18 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             "放坡開挖/無支撐 (極快)"
         ])
         
+        # [New] 動態顯示連續壁輔助措施
+        rw_aux_options = []
+        if "連續壁" in excavation_system:
+            rw_aux_options = st.multiselect(
+                "連續壁輔助措施", 
+                ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"],
+                help="地中壁與扶壁雖能抑制變形，但會顯著增加導溝、挖掘與澆置時間。"
+            )
+        
     with col3:
         site_condition = st.selectbox("基地現況", [
-            "純空地 (無須拆除)", 
-            "有舊建物 (無地下室)", 
-            "有舊建物 (含舊地下室)", 
-            "僅存舊地下室 (需回填/破除)"
+            "純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"
         ])
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
         prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
@@ -84,9 +87,8 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
 
     # === 下半部：規模量體 ===
     st.markdown("#### 2. 規模量體設定")
-    
-    # 第一列：面積
     dim_c1, dim_c2, dim_c3 = st.columns(3)
+    
     with dim_c1:
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
         base_area_ping = base_area_m2 * 0.3025
@@ -108,7 +110,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             st.info(f"依類型自動設定：{prep_type_select}")
 
     st.write("") 
-    
     building_details_df = None
     max_floors_up = 1
     building_count = 1
@@ -117,28 +118,15 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置")
         t_col1, t_col2 = st.columns([1, 2])
         with t_col1:
-            default_data = pd.DataFrame([
-                {"棟別名稱": "A棟", "地上層數": 15},
-                {"棟別名稱": "B棟", "地上層數": 15},
-                {"棟別名稱": "C棟", "地上層數": 12}
-            ])
-            edited_df = st.data_editor(
-                default_data, num_rows="dynamic", use_container_width=False,
-                column_config={
-                    "棟別名稱": st.column_config.TextColumn("棟別", width="small", required=True),
-                    "地上層數": st.column_config.NumberColumn("層數 (F)", width="small", min_value=1, max_value=100, step=1, format="%d")
-                },
-                key="building_editor", height=150
-            )
+            default_data = pd.DataFrame([{"棟別名稱": "A棟", "地上層數": 15}, {"棟別名稱": "B棟", "地上層數": 15}, {"棟別名稱": "C棟", "地上層數": 12}])
+            edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=False, column_config={"棟別名稱": st.column_config.TextColumn("棟別", width="small", required=True), "地上層數": st.column_config.NumberColumn("層數 (F)", width="small", min_value=1, max_value=100, step=1, format="%d")}, key="building_editor", height=150)
         with t_col2:
             st.caption("👈 請在左側表格新增或修改各棟樓層。")
             if not edited_df.empty:
                 max_floors_up = int(edited_df["地上層數"].max())
                 building_count = len(edited_df)
                 building_details_df = edited_df
-                st.success(f"系統偵測共 **{building_count}** 棟，將以最高的 **{max_floors_up} F** 作為結構要徑計算基準。")
             else:
-                st.error("⚠️ 請至少輸入一棟資料")
                 max_floors_up = 15
     else:
         st.markdown("##### 🏢 地上層數設定")
@@ -169,26 +157,25 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-# 結構速度 Mapping (地上)
-# SC/SS 速度較快 (約8天)，RC較慢 (約14天)
 struct_map_above = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
-
-# 用途係數
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 multi_building_factor = 1.0
 if "集合住宅" in b_type and building_count > 1:
     multi_building_factor = 1.0 + (building_count - 1) * 0.03
 k_usage = k_usage_base * multi_building_factor
-
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
-
 excavation_map = {
     "連續壁 + 型鋼內支撐 (標準)": 1.0, "連續壁 + 地錨 (開挖動線佳)": 0.9,
     "全套管切削樁 + 型鋼內支撐": 0.95, "預壘樁/排樁 + 型鋼內支撐": 0.85,
     "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, "放坡開挖/無支撐 (極快)": 0.5
 }
 excav_multiplier = excavation_map.get(excavation_system, 1.0)
+
+# [New] 連續壁輔助工法係數
+aux_wall_factor = 0
+if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20 # 地中壁工期影響大
+if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10 # 扶壁次之
 
 # [A] 工項天數計算
 if "自訂" in prep_type_select and prep_days_custom is not None:
@@ -208,23 +195,20 @@ if "全套管基樁" in foundation_type: foundation_add = 90
 elif "樁基礎" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
 
-# 地下室工期 (主要受開挖與地下結構影響)
-# 如果地下結構是 SRC，鋼骨吊裝會比純 RC 稍慢一點點，但不明顯，暫時維持一致
-# 重點是：這裡不再受「地上結構 (如 SC)」的參數誤導
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
-d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add) * area_multiplier)
 
-# 地上結構 (使用 struct_above 的參數)
+# 基礎/地下室總工期 = (層數運算 + 基礎樁 + 輔助壁體) * 面積係數
+# 輔助壁體時間：基準假設壁體施作約需 60 天，乘上加成係數
+d_aux_wall_days = int(60 * aux_wall_factor)
+d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add + d_aux_wall_days) * area_multiplier)
+
 d_struct_body = int(max_floors_up * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
-
 d_ext_wall = int(max_floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
 d_mep = int((60 + max_floors_up * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + max_floors_up * 3) * area_multiplier * k_usage)
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
-if "集合住宅" in b_type:
-    d_insp = d_insp_base + (building_count - 1) * 15
-else:
-    d_insp = d_insp_base
+if "集合住宅" in b_type: d_insp = d_insp_base + (building_count - 1) * 15
+else: d_insp = d_insp_base
 
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
@@ -247,6 +231,11 @@ p_soil_s = p2_e + timedelta(days=1)
 p_soil_e = get_end_date(p_soil_s, d_soil)
 p3_s = p_soil_e + timedelta(days=1)
 p3_e = get_end_date(p3_s, d_sub)
+
+# 地下室備註組合
+sub_note = f"要徑 ({struct_below})"
+if aux_wall_factor > 0:
+    sub_note += " +輔助壁"
 
 if "逆打" in b_method or "雙順打" in b_method:
     lag_1f_slab = int(60 * area_multiplier)
@@ -297,8 +286,8 @@ schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": "要徑"},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": demo_note},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
-    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": f"要徑 ({struct_below})"}, # 顯示地下結構
-    {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": f"{struct_note} ({struct_above})"}, # 顯示地上結構
+    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": sub_note}, # 更新備註
+    {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": f"{struct_note} ({struct_above})"},
     {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
     {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
@@ -341,14 +330,21 @@ if "集合住宅" in b_type and building_details_df is not None:
         details_list.append(f"{row['棟別名稱']}:{row['地上層數']}F")
     details_str = " / ".join(details_list)
 
+# 整理輔助措施文字
+aux_str = ", ".join(rw_aux_options) if rw_aux_options else "無"
+excavation_str = f"{excavation_system}"
+if rw_aux_options:
+    excavation_str += f" (輔助: {aux_str})"
+
 report_rows = [
     ["項目名稱", project_name],
     ["[ 建築規模與條件 ]", ""],
     ["建物類型", b_type_str], 
     ["各棟配置", details_str],
-    ["地上結構", struct_above], ["地下結構", struct_below], # 分開列出
+    ["地上結構", struct_above], ["地下結構", struct_below],
     ["外牆型式", ext_wall],
-    ["基礎型式", foundation_type], ["施工方式", b_method], ["開挖擋土", excavation_system],
+    ["基礎型式", foundation_type], ["施工方式", b_method], 
+    ["開挖擋土", excavation_str], # 更新顯示輔助措施
     ["基地現況", site_condition], ["地質改良", soil_improvement],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
     ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"],
