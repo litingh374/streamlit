@@ -3,11 +3,12 @@ import datetime
 from datetime import timedelta
 import pandas as pd
 import io
-import plotly.express as px
+# ⚠️ 請確保已安裝此套件: pip install plotly
+import plotly.express as px 
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.9", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.0", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -69,8 +70,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             rw_aux_options = st.multiselect("連續壁輔助措施", ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"])
         
     with col3:
-        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"
-        ])
+        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"])
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
         prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
 
@@ -283,7 +283,13 @@ sched_display_df = pd.DataFrame(schedule_data)
 sched_display_df = sched_display_df[sched_display_df["需用工作天"] > 0]
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
-st.table(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]])
+
+# [V6.0 修正] 改用 st.dataframe 並設定 hide_index=True，解決編號跳號問題
+st.dataframe(
+    sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]],
+    hide_index=True, 
+    use_container_width=True
+)
 
 # --- 8. 甘特圖 ---
 st.subheader("📊 專案進度甘特圖")
@@ -296,18 +302,17 @@ if not sched_display_df.empty:
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
         hover_data={"需用工作天": True, "備註": True}, height=500
     )
-    # [視覺優化] width=0.5, font size=13
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='start', 
-        width=0.5, 
+        width=0.5, # 寬度 0.5
         marker_line_width=0, 
         opacity=0.9, 
-        textfont=dict(size=13, family="Microsoft JhengHei")
+        textfont=dict(size=13, family="Microsoft JhengHei") # 字體 13
     )
     fig.update_layout(
         plot_bgcolor='white', 
-        font=dict(family="Microsoft JhengHei", size=13, color="#2D2926"), # 座標軸也統一為 13px
+        font=dict(family="Microsoft JhengHei", size=13, color="#2D2926"), 
         xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=13)), 
         yaxis=dict(title="", autorange="reversed", tickfont=dict(size=13)), 
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
