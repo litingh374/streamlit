@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.6", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v5.7", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -64,13 +64,13 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             "鋼板樁 + 型鋼內支撐 (淺開挖)",
             "放坡開挖/無支撐 (極快)"
         ])
-        # 連續壁輔助措施
         rw_aux_options = []
         if "連續壁" in excavation_system:
             rw_aux_options = st.multiselect("連續壁輔助措施", ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"])
         
     with col3:
-        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"])
+        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"
+        ])
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
         prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
 
@@ -163,7 +163,6 @@ excavation_map = {
 }
 excav_multiplier = excavation_map.get(excavation_system, 1.0)
 
-# 輔助措施係數
 aux_wall_factor = 0
 if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20
 if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10
@@ -286,34 +285,37 @@ sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.table(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]])
 
-# --- 8. 甘特圖 ---
+# --- 8. 甘特圖 (字體放大版) ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
     professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"]
+    
+    # 增加圖表高度至 550 (容納大字)
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
-        color_discrete_sequence=professional_colors, text="工項階段", # 確保有這行
+        color_discrete_sequence=professional_colors, text="工項階段", 
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=480
+        hover_data={"需用工作天": True, "備註": True}, height=550 
     )
-    # [關鍵修復] 移除 uniformtext_mode='hide'
+    
+    # 字體放大至 16px，Bar 寬度 0.75
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='start', 
-        width=0.5, 
+        width=0.75, 
         marker_line_width=0, 
         opacity=0.9, 
-        textfont=dict(size=13, family="Microsoft JhengHei") # 移除 color='white' 讓 Plotly 自動判斷
+        textfont=dict(size=16, family="Microsoft JhengHei")
     )
+    
     fig.update_layout(
         plot_bgcolor='white', 
-        font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), 
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), 
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), 
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
+        font=dict(family="Microsoft JhengHei", size=15, color="#2D2926"), # 座標軸字體 15px
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=15)), 
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=15)), 
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=13)), 
         margin=dict(l=20, r=20, t=60, b=20)
-        # 移除了 uniformtext_mode 設定
     )
     st.plotly_chart(fig, use_container_width=True)
 else:
