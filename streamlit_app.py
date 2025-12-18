@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.7", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.8", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -224,14 +224,13 @@ d_ext_wall = int(calc_floors_struct * 12 * area_multiplier * ext_wall_multiplier
 d_mep = int((60 + calc_floors_struct * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + calc_floors_struct * 3) * area_multiplier * k_usage)
 
-# [Updated] 驗收天數邏輯
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
 if "集合住宅" in b_type: 
     d_insp = d_insp_base + (building_count - 1) * 15
-    insp_note = f"多棟聯合驗收 (共{building_count}棟)" # 多棟文字
+    insp_note = f"多棟聯合驗收 (共{building_count}棟)" 
 else: 
     d_insp = d_insp_base
-    insp_note = "標準驗收流程" # 單棟文字
+    insp_note = "標準驗收流程"
 
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
@@ -282,7 +281,10 @@ p8_s = get_end_date(p6_s, lag_finishing)
 p8_e = get_end_date(p8_s, d_finishing)
 p9_s = p_ext_e - timedelta(days=30)
 p9_e = get_end_date(p9_s, d_insp)
-final_project_finish = max(p3_e, p4_e, p_ext_e, p5_e, p6_e, p7_e, p8_e, p9_e)
+
+# [FIX] 修復 NameError: 確保所有變數都存在
+final_project_finish = max(p5_e, p6_e, p_ext_e, p7_e, p8_e, p9_e)
+
 calendar_days = (final_project_finish - p1_s).days
 duration_months = calendar_days / 30.44
 avg_ratio = 5/7 if exclude_sat and exclude_sun else 6/7 if exclude_sun else 1.0
@@ -320,7 +322,7 @@ schedule_data = [
     {"工項階段": "7. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "8. 內裝機電/管線", "需用工作天": d_mep, "Start": p7_s, "Finish": p7_e, "備註": "併行"},
     {"工項階段": "9. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p8_s, "Finish": p8_e, "備註": "併行"},
-    {"工項階段": "10. 驗收取得使照", "需用工作天": d_insp, "Start": p9_s, "Finish": p9_e, "備註": insp_note}, # 使用動態備註
+    {"工項階段": "10. 驗收取得使照", "需用工作天": d_insp, "Start": p9_s, "Finish": p9_e, "備註": insp_note},
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
@@ -329,7 +331,7 @@ sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
 
-# --- 8. 甘特圖 ---
+# --- 8. 甘特圖 (大字體/細色塊) ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
@@ -338,14 +340,24 @@ if not sched_display_df.empty:
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=500
+        hover_data={"需用工作天": True, "備註": True}, height=550
     )
-    fig.update_traces(textposition='inside', insidetextanchor='start', width=0.6, marker_line_width=0, opacity=0.9, textfont=dict(size=15, family="Microsoft JhengHei"))
+    # [VISUAL FIX] 色塊縮小至 0.4，字體放大至 18 (包含色塊內文字)
+    fig.update_traces(
+        textposition='inside', 
+        insidetextanchor='start', 
+        width=0.4, 
+        marker_line_width=0, 
+        opacity=0.9, 
+        textfont=dict(size=18, family="Microsoft JhengHei")
+    )
     fig.update_layout(
-        plot_bgcolor='white', font=dict(family="Microsoft JhengHei", size=15, color="#2D2926"), 
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=15)), 
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=15)), 
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=13)), 
+        plot_bgcolor='white', 
+        # [VISUAL FIX] 座標軸字體放大至 18
+        font=dict(family="Microsoft JhengHei", size=18, color="#2D2926"), 
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=18)), 
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=18)), 
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)), 
         margin=dict(l=20, r=20, t=60, b=20)
     )
     st.plotly_chart(fig, use_container_width=True)
