@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.3", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v5.4", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -47,7 +47,15 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
     with col1:
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
-        b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
+        
+        # [New] 拆分地上與地下結構
+        st.markdown("**結構型式**")
+        c1_1, c1_2 = st.columns(2)
+        with c1_1:
+            struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
+        with c1_2:
+            struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0, help="地下室通常為RC或SRC")
+
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
     
     with col2:
@@ -77,21 +85,17 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     # === 下半部：規模量體 ===
     st.markdown("#### 2. 規模量體設定")
     
-    # 第一列：面積相關
+    # 第一列：面積
     dim_c1, dim_c2, dim_c3 = st.columns(3)
-    
     with dim_c1:
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
         
-    # [Revised] 總樓地板面積輸入 (m2 -> ping)
-    # 預估邏輯：基地面積 * 預設樓層(15+3) * 0.7(建蔽/係數) - 僅供預設值參考
     est_floors = 18 
     est_fa_m2 = base_area_m2 * est_floors * 0.7 
-    
     with dim_c2:
-        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=1.0, value=est_fa_m2, step=100.0, help="請輸入執照上之總樓地板面積 ($m^2$)")
+        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=1.0, value=est_fa_m2, step=100.0)
         total_fa_ping = total_fa_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{total_fa_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
@@ -158,26 +162,27 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 # --- 5. 核心運算邏輯 ---
-# 面積係數 (以基地面積為主)
 base_area_factor = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
-
-# 規模係數 (以總樓地板坪數判斷)
-# 假設標準 3000 坪，每增加 1000 坪，複雜度增加 5%
 vol_factor = 1.0
 if total_fa_ping > 3000:
     vol_factor = 1 + ((total_fa_ping - 3000) / 5000) * 0.05
-    vol_factor = min(vol_factor, 1.2) # 上限 1.2
-
+    vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
+# 結構速度 Mapping (地上)
+# SC/SS 速度較快 (約8天)，RC較慢 (約14天)
+struct_map_above = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
+
+# 用途係數
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 multi_building_factor = 1.0
 if "集合住宅" in b_type and building_count > 1:
     multi_building_factor = 1.0 + (building_count - 1) * 0.03
 k_usage = k_usage_base * multi_building_factor
+
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
+
 excavation_map = {
     "連續壁 + 型鋼內支撐 (標準)": 1.0, "連續壁 + 地錨 (開挖動線佳)": 0.9,
     "全套管切削樁 + 型鋼內支撐": 0.95, "預壘樁/排樁 + 型鋼內支撐": 0.85,
@@ -202,10 +207,16 @@ foundation_add = 0
 if "全套管基樁" in foundation_type: foundation_add = 90
 elif "樁基礎" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
+
+# 地下室工期 (主要受開挖與地下結構影響)
+# 如果地下結構是 SRC，鋼骨吊裝會比純 RC 稍慢一點點，但不明顯，暫時維持一致
+# 重點是：這裡不再受「地上結構 (如 SC)」的參數誤導
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add) * area_multiplier)
 
-d_struct_body = int(max_floors_up * struct_map.get(b_struct, 14) * area_multiplier * k_usage)
+# 地上結構 (使用 struct_above 的參數)
+d_struct_body = int(max_floors_up * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
+
 d_ext_wall = int(max_floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
 d_mep = int((60 + max_floors_up * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + max_floors_up * 3) * area_multiplier * k_usage)
@@ -215,7 +226,7 @@ if "集合住宅" in b_type:
 else:
     d_insp = d_insp_base
 
-# [B] 日期推算函數
+# [B] 日期推算
 def get_end_date(start_date, days_needed):
     curr = start_date
     added = 0
@@ -286,8 +297,8 @@ schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": "要徑"},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": demo_note},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
-    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": f"要徑 ({b_method[:2]})"},
-    {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": struct_note},
+    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": f"要徑 ({struct_below})"}, # 顯示地下結構
+    {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": f"{struct_note} ({struct_above})"}, # 顯示地上結構
     {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
     {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
@@ -308,7 +319,7 @@ if not sched_display_df.empty:
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
-        title=f"【{project_name}】工程進度模擬 (最高 {max_floors_up}F)",
+        title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
         hover_data={"需用工作天": True, "備註": True}, height=480
     )
     fig.update_traces(textposition='inside', insidetextanchor='start', width=0.5, marker_line_width=0, opacity=0.9, textfont=dict(size=14, color="white", family="Microsoft JhengHei"))
@@ -335,7 +346,8 @@ report_rows = [
     ["[ 建築規模與條件 ]", ""],
     ["建物類型", b_type_str], 
     ["各棟配置", details_str],
-    ["結構型式", b_struct], ["外牆型式", ext_wall],
+    ["地上結構", struct_above], ["地下結構", struct_below], # 分開列出
+    ["外牆型式", ext_wall],
     ["基礎型式", foundation_type], ["施工方式", b_method], ["開挖擋土", excavation_system],
     ["基地現況", site_condition], ["地質改良", soil_improvement],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
