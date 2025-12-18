@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.4", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.5", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -47,10 +47,15 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
     with col1:
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
+        
+        # [修改] 交換順序：先地下，後地上
         st.markdown("**結構型式**")
         c1_1, c1_2 = st.columns(2)
-        with c1_1: struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
-        with c1_2: struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
+        with c1_1: 
+            struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
+        with c1_2: 
+            struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
+            
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
     
     with col2:
@@ -147,14 +152,12 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
                 st.error("⚠️ 請至少輸入一棟資料")
                 calc_floors_struct = 15
     else:
-        # [修改] 使用三欄式佈局，讓地上與屋突各佔一格，與上方欄位對齊
         st.markdown("##### 🏢 地上層數設定")
         s_col1, s_col2, s_col3 = st.columns(3) 
         with s_col1:
             floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
         with s_col2:
             floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, help="屋突層數列入結構工期計算")
-        # s_col3 留空，保持對齊
         
         calc_floors_struct = floors_up + floors_roof
         display_max_floor = floors_up
@@ -331,7 +334,7 @@ if not sched_display_df.empty:
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
         hover_data={"需用工作天": True, "備註": True}, height=500
     )
-    # [視覺優化] width=0.6, font size=15 (還原至 v5.8 設定)
+    # [視覺參數維持] width=0.6, font size=15
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='start', 
