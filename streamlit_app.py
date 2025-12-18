@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v4.7", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v4.8", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -29,6 +29,8 @@ st.markdown("""
         font-size: 14px; color: #1565c0; margin-top: -10px; margin-bottom: 10px;
         border-left: 3px solid #1565c0;
     }
+    /* 讓 Data Editor 背景乾淨 */
+    div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; }
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
     </style>
     """, unsafe_allow_html=True)
@@ -43,15 +45,8 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # 1. 建物類型：新增「集合住宅」
+        # 1. 建物類型
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
-        
-        # 動態顯示棟數輸入 (只有選集合住宅才出現)
-        if "集合住宅" in b_type:
-            building_count = st.number_input("建物棟數", min_value=2, value=3, step=1)
-        else:
-            building_count = 1
-
         b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
         foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
@@ -70,17 +65,61 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
     
     with col3:
+        # 地下層數 (通常全區共用)
+        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
+        
+        # 基地面積
+        base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
+        base_area_ping = base_area_m2 * 0.3025
+        st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
+        
+        # 前置作業
         prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
         if "自訂" in prep_type_select:
             prep_days_custom = st.number_input("輸入自訂天數", min_value=0, value=120)
         else:
             prep_days_custom = None
-            
+
+    # --- 集合住宅多棟樓層設定區 (橫跨全寬) ---
+    building_details_df = None
+    max_floors_up = 1 # 預設
+    building_count = 1 # 預設
+
+    if "集合住宅" in b_type:
+        st.write("---")
+        st.markdown("**🏙️ 各棟樓層設定** (系統將以「最高樓層」作為結構工期計算基準)")
+        
+        # 初始化多棟資料
+        if "multi_building_data" not in st.session_state:
+            st.session_state.multi_building_data = pd.DataFrame([
+                {"棟別名稱": "A棟", "地上層數": 15},
+                {"棟別名稱": "B棟", "地上層數": 15}
+            ])
+
+        # 使用 Data Editor 讓用戶直接編輯表格
+        edited_df = st.data_editor(
+            st.session_state.multi_building_data,
+            num_rows="dynamic", # 允許新增刪除列
+            use_container_width=True,
+            column_config={
+                "地上層數": st.column_config.NumberColumn(min_value=1, max_value=100, step=1, format="%d F")
+            }
+        )
+        
+        # 更新邏輯變數
+        building_details_df = edited_df
+        if not edited_df.empty:
+            max_floors_up = int(edited_df["地上層數"].max())
+            building_count = len(edited_df)
+            st.info(f"👉 目前設定共 {building_count} 棟，結構要徑將由最高的 **{max_floors_up} F** 決定。")
+        else:
+            st.warning("請至少輸入一棟資料")
+            max_floors_up = 12 # fallback
+    else:
+        # 單棟模式
         floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
-        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
-        base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
-        base_area_ping = base_area_m2 * 0.3025
-        st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
+        max_floors_up = floors_up
+        building_count = 1
 
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
@@ -99,15 +138,11 @@ with st.expander("點擊展開/隱藏 日期設定"):
 area_multiplier = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 struct_map = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
 
-# 用途係數
-# 集合住宅基本係數同住宅，但會受棟數影響
+# 用途係數 & 多棟調整
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
-
-# 多棟調整係數：每多一棟，機電/裝修/結構 增加 3% 的協調緩衝 (非線性累加，因為可分區併行)
 multi_building_factor = 1.0
 if "集合住宅" in b_type and building_count > 1:
     multi_building_factor = 1.0 + (building_count - 1) * 0.03
-
 k_usage = k_usage_base * multi_building_factor
 
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
@@ -136,12 +171,13 @@ elif "微型樁" in foundation_type: foundation_add = 30
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add) * area_multiplier)
 
-d_struct_body = int(floors_up * struct_map.get(b_struct, 14) * area_multiplier * k_usage)
-d_ext_wall = int(floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
-d_mep = int((60 + floors_up * 4) * area_multiplier * k_usage) 
-d_finishing = int((90 + floors_up * 3) * area_multiplier * k_usage)
+# 結構與外牆：使用 max_floors_up (最高樓層) 計算要徑
+d_struct_body = int(max_floors_up * struct_map.get(b_struct, 14) * area_multiplier * k_usage)
+d_ext_wall = int(max_floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
+d_mep = int((60 + max_floors_up * 4) * area_multiplier * k_usage) 
+d_finishing = int((90 + max_floors_up * 3) * area_multiplier * k_usage)
 
-# 驗收階段：集合住宅每多一棟，驗收期增加 15 天
+# 驗收階段：集合住宅多棟加成
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
 if "集合住宅" in b_type:
     d_insp = d_insp_base + (building_count - 1) * 15
@@ -176,10 +212,10 @@ p3_e = get_end_date(p3_s, d_sub)
 if "逆打" in b_method or "雙順打" in b_method:
     lag_1f_slab = int(60 * area_multiplier)
     p4_s = get_end_date(p3_s, lag_1f_slab)
-    struct_note = "併行 (逆打同步)"
+    struct_note = f"併行 (要徑:{max_floors_up}F)"
 else:
     p4_s = p3_e + timedelta(days=1)
-    struct_note = "要徑 (順打接續)"
+    struct_note = f"順打 (要徑:{max_floors_up}F)"
 
 p4_e = get_end_date(p4_s, d_struct_body)
 
@@ -215,12 +251,11 @@ with res_col3:
     d_date = final_project_finish if enable_date else "日期未定"
     st.markdown(f"<div class='metric-container' style='border-left-color:{c_color};'><small>預計完工日期</small><br><b style='color:{c_color};'>{d_date}</b></div>", unsafe_allow_html=True)
 with res_col4: 
-    if "逆打" in b_method or "雙順打" in b_method:
-        overlap_structure = (p3_e - p4_s).days
-        saved_msg = f"逆打縮短約 {int(max(0, overlap_structure)/30)} 個月"
+    if "集合住宅" in b_type:
+        msg = f"多棟調度係數 x{multi_building_factor:.2f}"
     else:
-        saved_msg = "採用順打工法"
-    st.markdown(f"<div class='metric-container'><small>工法效益分析</small><br><b>{saved_msg}</b></div>", unsafe_allow_html=True)
+        msg = "單棟標準係數"
+    st.markdown(f"<div class='metric-container'><small>規模複雜度分析</small><br><b>{msg}</b></div>", unsafe_allow_html=True)
 
 # --- 7. 詳細進度拆解表 ---
 st.subheader("📅 詳細工項進度建議表")
@@ -230,10 +265,10 @@ schedule_data = [
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
     {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": f"要徑 ({b_method[:2]})"},
     {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": struct_note},
-    {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行 (結構50%)"},
+    {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
     {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
-    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": f"外牆前1個月 (共{building_count}棟)"},
+    {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": f"多棟聯合驗收"},
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
@@ -250,7 +285,7 @@ if not sched_display_df.empty:
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
-        title=f"【{project_name}】工程進度模擬 ({b_type})",
+        title=f"【{project_name}】工程進度模擬 (最高 {max_floors_up}F)",
         hover_data={"需用工作天": True, "備註": True}, height=480
     )
     fig.update_traces(textposition='inside', insidetextanchor='start', width=0.5, marker_line_width=0, opacity=0.9, textfont=dict(size=14, color="white", family="Microsoft JhengHei"))
@@ -263,18 +298,26 @@ else:
 st.divider()
 st.subheader("📥 導出詳細報表")
 
-# 如果是集合住宅，記錄棟數
+# 整理集合住宅明細
 b_type_str = b_type
-if "集合住宅" in b_type:
+details_str = ""
+if "集合住宅" in b_type and building_details_df is not None:
     b_type_str = f"{b_type} (共 {building_count} 棟)"
+    # 將每棟資料串成字串
+    details_list = []
+    for idx, row in building_details_df.iterrows():
+        details_list.append(f"{row['棟別名稱']}:{row['地上層數']}F")
+    details_str = " / ".join(details_list)
 
 report_rows = [
     ["項目名稱", project_name],
     ["[ 建築規模與條件 ]", ""],
-    ["建物類型", b_type_str], ["結構型式", b_struct], ["外牆型式", ext_wall],
+    ["建物類型", b_type_str], 
+    ["各棟配置", details_str], # 新增這行
+    ["結構型式", b_struct], ["外牆型式", ext_wall],
     ["基礎型式", foundation_type], ["施工方式", b_method], ["開挖擋土", excavation_system],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
-    ["樓層規模", f"地上 {floors_up} F / 地下 {floors_down} B"],
+    ["樓層規模", f"地下 {floors_down} B / 最高地上 {max_floors_up} F"],
     ["", ""],
     ["[ 進度分析 ]", ""]
 ]
