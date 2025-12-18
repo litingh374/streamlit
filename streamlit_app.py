@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v4.8", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v4.9", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -29,8 +29,8 @@ st.markdown("""
         font-size: 14px; color: #1565c0; margin-top: -10px; margin-bottom: 10px;
         border-left: 3px solid #1565c0;
     }
-    /* 讓 Data Editor 背景乾淨 */
-    div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; }
+    /* 優化 Data Editor 樣式 */
+    div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; margin-top: 10px; }
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
     </style>
     """, unsafe_allow_html=True)
@@ -39,21 +39,22 @@ st.markdown("""
 st.title("🏗️ 建築施工工期估算輔助系統")
 project_name = st.text_input("📝 請輸入專案名稱", value="未命名專案")
 
-# --- 4. 參數輸入區 ---
+# --- 4. 參數輸入區 (版面重組) ---
 st.subheader("📋 建築規模參數")
-with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=True):
+with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
+    # === 上半部：工程屬性 (下拉選單區) ===
+    st.markdown("#### 1. 工程屬性設定")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # 1. 建物類型
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
         b_struct = st.selectbox("結構型式", ["RC造", "SRC造", "SS造", "SC造"])
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
-        foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
     
     with col2:
+        foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-        excavation_system = st.selectbox("開挖擋土系統 (整合)", [
+        excavation_system = st.selectbox("開挖擋土系統", [
             "連續壁 + 型鋼內支撐 (標準)",
             "連續壁 + 地錨 (開挖動線佳)",
             "全套管切削樁 + 型鋼內支撐",
@@ -61,62 +62,77 @@ with st.expander("點擊展開/隱藏 建築規模與基地資訊", expanded=Tru
             "鋼板樁 + 型鋼內支撐 (淺開挖)",
             "放坡開挖/無支撐 (極快)"
         ])
+        
+    with col3:
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (需地上物拆除)", "有舊地下室 (需額外破除)"])
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
+        prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
+
+    st.divider() # 分隔線
+
+    # === 下半部：量體規模 (數值輸入區) ===
+    st.markdown("#### 2. 規模量體設定")
     
-    with col3:
-        # 地下層數 (通常全區共用)
-        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
-        
-        # 基地面積
+    # 第一列：面積、地下層、前置天數
+    dim_c1, dim_c2, dim_c3 = st.columns(3)
+    
+    with dim_c1:
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=1.0, value=1652.89, step=10.0)
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
         
-        # 前置作業
-        prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
+    with dim_c2:
+        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
+        
+    with dim_c3:
+        # 自訂前置天數
         if "自訂" in prep_type_select:
-            prep_days_custom = st.number_input("輸入自訂天數", min_value=0, value=120)
+            prep_days_custom = st.number_input("輸入自訂前置天數", min_value=0, value=120)
         else:
             prep_days_custom = None
+            st.info(f"依類型自動設定：{prep_type_select}")
 
-    # --- 集合住宅多棟樓層設定區 (橫跨全寬) ---
+    # 第二列：地上層數設定 (依照類型變換)
+    st.write("") # 空行間距
+    
     building_details_df = None
-    max_floors_up = 1 # 預設
-    building_count = 1 # 預設
+    max_floors_up = 1
+    building_count = 1
 
     if "集合住宅" in b_type:
-        st.write("---")
-        st.markdown("**🏙️ 各棟樓層設定** (系統將以「最高樓層」作為結構工期計算基準)")
+        st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置表")
+        st.caption("請直接在下方表格修改數值，或點擊表格下方的「+」新增棟別。系統將以**最高樓層**作為結構要徑。")
         
-        # 初始化多棟資料
-        if "multi_building_data" not in st.session_state:
-            st.session_state.multi_building_data = pd.DataFrame([
-                {"棟別名稱": "A棟", "地上層數": 15},
-                {"棟別名稱": "B棟", "地上層數": 15}
-            ])
-
-        # 使用 Data Editor 讓用戶直接編輯表格
+        # 初始化多棟資料 (如果沒有則建立預設)
+        default_data = pd.DataFrame([
+            {"棟別名稱": "A棟", "地上層數": 15},
+            {"棟別名稱": "B棟", "地上層數": 15},
+            {"棟別名稱": "C棟", "地上層數": 12}
+        ])
+        
+        # 使用 data_editor
         edited_df = st.data_editor(
-            st.session_state.multi_building_data,
-            num_rows="dynamic", # 允許新增刪除列
+            default_data,
+            num_rows="dynamic", # 允許動態新增刪除
             use_container_width=True,
             column_config={
-                "地上層數": st.column_config.NumberColumn(min_value=1, max_value=100, step=1, format="%d F")
-            }
+                "棟別名稱": st.column_config.TextColumn("棟別名稱 (可自訂)", required=True),
+                "地上層數": st.column_config.NumberColumn("地上層數 (F)", min_value=1, max_value=100, step=1, format="%d F", required=True)
+            },
+            key="building_editor" # 設定 key 避免刷新遺失
         )
         
-        # 更新邏輯變數
-        building_details_df = edited_df
         if not edited_df.empty:
             max_floors_up = int(edited_df["地上層數"].max())
             building_count = len(edited_df)
-            st.info(f"👉 目前設定共 {building_count} 棟，結構要徑將由最高的 **{max_floors_up} F** 決定。")
+            building_details_df = edited_df
         else:
-            st.warning("請至少輸入一棟資料")
-            max_floors_up = 12 # fallback
+            st.error("⚠️ 請至少輸入一棟資料")
+            max_floors_up = 15 # fallback
+            
     else:
-        # 單棟模式
+        # 單棟模式：直接顯示簡單輸入框
+        st.markdown("##### 🏢 地上層數設定")
         floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
         max_floors_up = floors_up
         building_count = 1
@@ -155,7 +171,7 @@ excavation_map = {
 excav_multiplier = excavation_map.get(excavation_system, 1.0)
 
 # [A] 工項天數計算
-if "自訂" in prep_type_select:
+if "自訂" in prep_type_select and prep_days_custom is not None:
     d_prep = int(prep_days_custom)
 else:
     d_prep = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
@@ -177,7 +193,7 @@ d_ext_wall = int(max_floors_up * 12 * area_multiplier * ext_wall_multiplier * k_
 d_mep = int((60 + max_floors_up * 4) * area_multiplier * k_usage) 
 d_finishing = int((90 + max_floors_up * 3) * area_multiplier * k_usage)
 
-# 驗收階段：集合住宅多棟加成
+# 驗收階段
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
 if "集合住宅" in b_type:
     d_insp = d_insp_base + (building_count - 1) * 15
@@ -265,7 +281,7 @@ schedule_data = [
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
     {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": f"要徑 ({b_method[:2]})"},
     {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": struct_note},
-    {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
+    {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行 (結構50%)"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
     {"工項階段": "8. 室內裝修/景觀", "需用工作天": d_finishing, "Start": p6_s, "Finish": p6_e, "備註": "併行"},
     {"工項階段": "9. 驗收取得使照", "需用工作天": d_insp, "Start": p7_s, "Finish": p7_e, "備註": f"多棟聯合驗收"},
@@ -298,12 +314,10 @@ else:
 st.divider()
 st.subheader("📥 導出詳細報表")
 
-# 整理集合住宅明細
 b_type_str = b_type
 details_str = ""
 if "集合住宅" in b_type and building_details_df is not None:
     b_type_str = f"{b_type} (共 {building_count} 棟)"
-    # 將每棟資料串成字串
     details_list = []
     for idx, row in building_details_df.iterrows():
         details_list.append(f"{row['棟別名稱']}:{row['地上層數']}F")
@@ -313,7 +327,7 @@ report_rows = [
     ["項目名稱", project_name],
     ["[ 建築規模與條件 ]", ""],
     ["建物類型", b_type_str], 
-    ["各棟配置", details_str], # 新增這行
+    ["各棟配置", details_str],
     ["結構型式", b_struct], ["外牆型式", ext_wall],
     ["基礎型式", foundation_type], ["施工方式", b_method], ["開挖擋土", excavation_system],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
