@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v4.2", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v4.3", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -194,67 +194,44 @@ sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.table(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]])
 
-# --- 8. 甘特圖 (美編優化版) ---
+# --- 8. 甘特圖 (文字標註增強版) ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
     
-    # 定義工程莫蘭迪色系 (不刺眼的專業配色)
-    professional_colors = [
-        "#708090", # SlateGray (前期)
-        "#A52A2A", # Brown (拆除)
-        "#8B4513", # SaddleBrown (地質)
-        "#2F4F4F", # DarkSlateGray (地下室)
-        "#4682B4", # SteelBlue (主體)
-        "#5F9EA0", # CadetBlue (機電)
-        "#2E8B57", # SeaGreen (裝修)
-        "#DAA520"  # GoldenRod (驗收)
-    ]
+    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#4682B4", "#5F9EA0", "#2E8B57", "#DAA520"]
     
     fig = px.timeline(
         gantt_df, 
         x_start="Start", 
         x_end="Finish", 
         y="工項階段", 
-        color="工項階段", # 依然依階段上色
-        color_discrete_sequence=professional_colors, # 使用自訂色系
+        color="工項階段",
+        color_discrete_sequence=professional_colors,
+        text="工項階段", # 在色塊上顯示文字
         title=f"【{project_name}】工程進度模擬",
         hover_data={"需用工作天": True, "備註": True},
-        height=450 # 稍微調高一點
+        height=450
     )
     
-    # 美化設定
     fig.update_traces(
-        width=0.5, # 色塊變瘦 (0~1之間)
-        marker_line_width=0, # 移除色塊邊框
-        opacity=0.9
+        textposition='inside', # 文字在內部
+        insidetextanchor='start', # 靠左對齊
+        width=0.5, 
+        marker_line_width=0, 
+        opacity=0.9,
+        textfont=dict(size=14, color="white", family="Microsoft JhengHei") # 白字加粗
     )
     
     fig.update_layout(
-        plot_bgcolor='white', # 背景改為全白
-        font=dict(
-            family="Microsoft JhengHei", # 指定微軟正黑體
-            size=14,  # 整體字體加大
-            color="#2D2926"
-        ),
-        xaxis=dict(
-            title="工程期程",
-            showgrid=True, # 顯示垂直格線
-            gridcolor='#EEE', # 格線顏色淡灰
-            tickfont=dict(size=14) # X軸日期字體加大
-        ),
-        yaxis=dict(
-            title="",
-            autorange="reversed", # 順序從上到下
-            tickfont=dict(size=14, family="Microsoft JhengHei") # Y軸項目字體加大
-        ),
-        legend=dict(
-            orientation="h", # 圖例改為水平
-            yanchor="bottom", y=1.02,
-            xanchor="right", x=1,
-            font=dict(size=12)
-        ),
-        margin=dict(l=20, r=20, t=60, b=20)
+        plot_bgcolor='white',
+        font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"),
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)),
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)),
+        margin=dict(l=20, r=20, t=60, b=20),
+        uniformtext_minsize=10, # 確保文字最小尺寸
+        uniformtext_mode='hide' # 如果太小就隱藏
     )
     
     st.plotly_chart(fig, use_container_width=True)
