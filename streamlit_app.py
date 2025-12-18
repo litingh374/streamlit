@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.2", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.3", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -81,7 +81,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     dim_c1, dim_c2, dim_c3 = st.columns(3)
     
     with dim_c1:
-        # [修改] min_value=0.0，允許輸入 0
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=0.0, value=1652.89, step=10.0)
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
@@ -89,7 +88,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     est_floors = 18 
     est_fa_m2 = base_area_m2 * est_floors * 0.7 
     with dim_c2:
-        # [修改] min_value=0.0，允許輸入 0
         total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=0.0, value=est_fa_m2, step=100.0)
         total_fa_ping = total_fa_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{total_fa_ping:,.2f} 坪</div>", unsafe_allow_html=True)
@@ -104,29 +102,65 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
 
     st.write("") 
     building_details_df = None
-    max_floors_up = 1
+    
+    # 核心邏輯變數
+    calc_floors_struct = 1 # 用於結構計算的總層數 (F+R)
+    display_max_floor = 1  # 顯示用的最高樓層 (F)
+    display_max_roof = 0   # 顯示用的最高屋突 (R)
     building_count = 1
 
     if "集合住宅" in b_type:
         st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置")
         t_col1, t_col2 = st.columns([1, 2])
         with t_col1:
-            default_data = pd.DataFrame([{"棟別名稱": "A棟", "地上層數": 15}, {"棟別名稱": "B棟", "地上層數": 15}, {"棟別名稱": "C棟", "地上層數": 12}])
-            edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=False, column_config={"棟別名稱": st.column_config.TextColumn("棟別", width="small", required=True), "地上層數": st.column_config.NumberColumn("層數 (F)", width="small", min_value=1, max_value=100, step=1, format="%d")}, key="building_editor", height=150)
+            # 新增 "屋突層數" 欄位
+            default_data = pd.DataFrame([
+                {"棟別名稱": "A棟", "地上層數": 15, "屋突層數": 2}, 
+                {"棟別名稱": "B棟", "地上層數": 15, "屋突層數": 2}, 
+                {"棟別名稱": "C棟", "地上層數": 12, "屋突層數": 1}
+            ])
+            edited_df = st.data_editor(
+                default_data, 
+                num_rows="dynamic", 
+                use_container_width=False, 
+                column_config={
+                    "棟別名稱": st.column_config.TextColumn("棟別", width="small", required=True),
+                    "地上層數": st.column_config.NumberColumn("地上(F)", width="small", min_value=1, format="%d"),
+                    "屋突層數": st.column_config.NumberColumn("屋突(R)", width="small", min_value=0, format="%d")
+                }, 
+                key="building_editor", height=150
+            )
         with t_col2:
-            st.caption("👈 請在左側表格新增或修改各棟樓層。")
+            st.caption("👈 請在表格設定各棟的地上與屋突層數。")
             if not edited_df.empty:
-                max_floors_up = int(edited_df["地上層數"].max())
+                # 計算每棟的總層數 (地上+屋突)
+                edited_df["結構總層"] = edited_df["地上層數"] + edited_df["屋突層數"]
+                
+                # 找出結構要徑 (總層數最多者)
+                max_struct_idx = edited_df["結構總層"].idxmax()
+                row_max = edited_df.loc[max_struct_idx]
+                
+                calc_floors_struct = int(row_max["結構總層"])
+                display_max_floor = int(row_max["地上層數"])
+                display_max_roof = int(row_max["屋突層數"])
                 building_count = len(edited_df)
+                
                 building_details_df = edited_df
+                st.success(f"系統偵測共 **{building_count}** 棟。結構要徑依據 **{row_max['棟別名稱']}** 計算 (地上{display_max_floor}F + 屋突{display_max_roof}R)。")
             else:
-                max_floors_up = 15
+                st.error("⚠️ 請至少輸入一棟資料")
+                calc_floors_struct = 15
     else:
         st.markdown("##### 🏢 地上層數設定")
         s_col1, s_col2 = st.columns([1, 2])
         with s_col1:
             floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
-        max_floors_up = floors_up
+        with s_col2:
+            floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, help="屋突層數列入結構工期計算")
+        
+        calc_floors_struct = floors_up + floors_roof
+        display_max_floor = floors_up
+        display_max_roof = floors_roof
         building_count = 1
 
 st.subheader("📅 日期與排除條件")
@@ -191,10 +225,14 @@ sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor)
 d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add + d_aux_wall_days) * area_multiplier)
 
-d_struct_body = int(max_floors_up * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
-d_ext_wall = int(max_floors_up * 12 * area_multiplier * ext_wall_multiplier * k_usage)
-d_mep = int((60 + max_floors_up * 4) * area_multiplier * k_usage) 
-d_finishing = int((90 + max_floors_up * 3) * area_multiplier * k_usage)
+# [Updated] 結構體天數 = (地上層 + 屋突層) * 單層天數
+d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
+
+# 外牆/機電/裝修 也依據總高度計算
+d_ext_wall = int(calc_floors_struct * 12 * area_multiplier * ext_wall_multiplier * k_usage)
+d_mep = int((60 + calc_floors_struct * 4) * area_multiplier * k_usage) 
+d_finishing = int((90 + calc_floors_struct * 3) * area_multiplier * k_usage)
+
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
 if "集合住宅" in b_type: d_insp = d_insp_base + (building_count - 1) * 15
 else: d_insp = d_insp_base
@@ -227,10 +265,11 @@ if aux_wall_factor > 0: sub_note += " +輔助壁"
 if "逆打" in b_method or "雙順打" in b_method:
     lag_1f_slab = int(60 * area_multiplier)
     p4_s = get_end_date(p3_s, lag_1f_slab)
-    struct_note = f"併行 (要徑:{max_floors_up}F)"
+    # [Updated Note] 顯示總層數
+    struct_note = f"併行 ({display_max_floor}F+{display_max_roof}R)"
 else:
     p4_s = p3_e + timedelta(days=1)
-    struct_note = f"順打 (要徑:{max_floors_up}F)"
+    struct_note = f"順打 ({display_max_floor}F+{display_max_roof}R)"
 
 p4_e = get_end_date(p4_s, d_struct_body)
 lag_ext = int(d_struct_body * 0.5)
@@ -287,7 +326,7 @@ sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
 
-# --- 8. 甘特圖 (字體放大版) ---
+# --- 8. 甘特圖 ---
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
@@ -296,9 +335,9 @@ if not sched_display_df.empty:
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=500 
+        hover_data={"需用工作天": True, "備註": True}, height=500
     )
-    # [還原] 寬度0.6，字體15px
+    # [Visuals] Width 0.6, Font 15px
     fig.update_traces(
         textposition='inside', 
         insidetextanchor='start', 
@@ -329,8 +368,9 @@ if "集合住宅" in b_type and building_details_df is not None:
     b_type_str = f"{b_type} (共 {building_count} 棟)"
     details_list = []
     for idx, row in building_details_df.iterrows():
-        details_list.append(f"{row['棟別名稱']}:{row['地上層數']}F")
-    details_str = " / ".join(details_list)
+        # [Excel] 寫入屋突資訊
+        details_list.append(f"{row['棟別名稱']}:地上{row['地上層數']}F/屋突{row['屋突層數']}R")
+    details_str = " ; ".join(details_list)
 
 aux_str = ", ".join(rw_aux_options) if rw_aux_options else "無"
 excavation_str = f"{excavation_system}"
@@ -348,7 +388,7 @@ report_rows = [
     ["基地現況", site_condition], ["地質改良", soil_improvement],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
     ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"],
-    ["樓層規模", f"地下 {floors_down} B / 最高地上 {max_floors_up} F"],
+    ["樓層規模", f"地下 {floors_down} B / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"], # 更新顯示
     ["", ""],
     ["[ 進度分析 ]", ""]
 ]
