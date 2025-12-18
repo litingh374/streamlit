@@ -7,7 +7,7 @@ import plotly.express as px
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v5.5", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v5.6", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -56,8 +56,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     with col2:
         foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "微型樁 (工期短)", "獨立基腳"])
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-        
-        # 開挖系統與輔助措施
         excavation_system = st.selectbox("開挖擋土系統", [
             "連續壁 + 型鋼內支撐 (標準)",
             "連續壁 + 地錨 (開挖動線佳)",
@@ -66,20 +64,13 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             "鋼板樁 + 型鋼內支撐 (淺開挖)",
             "放坡開挖/無支撐 (極快)"
         ])
-        
-        # [New] 動態顯示連續壁輔助措施
+        # 連續壁輔助措施
         rw_aux_options = []
         if "連續壁" in excavation_system:
-            rw_aux_options = st.multiselect(
-                "連續壁輔助措施", 
-                ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"],
-                help="地中壁與扶壁雖能抑制變形，但會顯著增加導溝、挖掘與澆置時間。"
-            )
+            rw_aux_options = st.multiselect("連續壁輔助措施", ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"])
         
     with col3:
-        site_condition = st.selectbox("基地現況", [
-            "純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"
-        ])
+        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"])
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
         prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
 
@@ -172,10 +163,10 @@ excavation_map = {
 }
 excav_multiplier = excavation_map.get(excavation_system, 1.0)
 
-# [New] 連續壁輔助工法係數
+# 輔助措施係數
 aux_wall_factor = 0
-if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20 # 地中壁工期影響大
-if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10 # 扶壁次之
+if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20
+if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10
 
 # [A] 工項天數計算
 if "自訂" in prep_type_select and prep_days_custom is not None:
@@ -196,9 +187,6 @@ elif "樁基礎" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
 
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
-
-# 基礎/地下室總工期 = (層數運算 + 基礎樁 + 輔助壁體) * 面積係數
-# 輔助壁體時間：基準假設壁體施作約需 60 天，乘上加成係數
 d_aux_wall_days = int(60 * aux_wall_factor)
 d_sub = int(((floors_down * 55 * sub_speed_factor * excav_multiplier) + foundation_add + d_aux_wall_days) * area_multiplier)
 
@@ -232,10 +220,8 @@ p_soil_e = get_end_date(p_soil_s, d_soil)
 p3_s = p_soil_e + timedelta(days=1)
 p3_e = get_end_date(p3_s, d_sub)
 
-# 地下室備註組合
 sub_note = f"要徑 ({struct_below})"
-if aux_wall_factor > 0:
-    sub_note += " +輔助壁"
+if aux_wall_factor > 0: sub_note += " +輔助壁"
 
 if "逆打" in b_method or "雙順打" in b_method:
     lag_1f_slab = int(60 * area_multiplier)
@@ -286,7 +272,7 @@ schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": "要徑"},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": demo_note},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
-    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": sub_note}, # 更新備註
+    {"工項階段": "4. 基礎/地下室工程", "需用工作天": d_sub, "Start": p3_s, "Finish": p3_e, "備註": sub_note},
     {"工項階段": "5. 地上主體結構", "需用工作天": d_struct_body, "Start": p4_s, "Finish": p4_e, "備註": f"{struct_note} ({struct_above})"},
     {"工項階段": "6. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "7. 內裝機電/管線", "需用工作天": d_mep, "Start": p5_s, "Finish": p5_e, "備註": "併行"},
@@ -307,12 +293,28 @@ if not sched_display_df.empty:
     professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#DAA520"]
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
-        color_discrete_sequence=professional_colors, text="工項階段", 
+        color_discrete_sequence=professional_colors, text="工項階段", # 確保有這行
         title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
         hover_data={"需用工作天": True, "備註": True}, height=480
     )
-    fig.update_traces(textposition='inside', insidetextanchor='start', width=0.5, marker_line_width=0, opacity=0.9, textfont=dict(size=14, color="white", family="Microsoft JhengHei"))
-    fig.update_layout(plot_bgcolor='white', font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), margin=dict(l=20, r=20, t=60, b=20), uniformtext_minsize=10, uniformtext_mode='hide')
+    # [關鍵修復] 移除 uniformtext_mode='hide'
+    fig.update_traces(
+        textposition='inside', 
+        insidetextanchor='start', 
+        width=0.5, 
+        marker_line_width=0, 
+        opacity=0.9, 
+        textfont=dict(size=13, family="Microsoft JhengHei") # 移除 color='white' 讓 Plotly 自動判斷
+    )
+    fig.update_layout(
+        plot_bgcolor='white', 
+        font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), 
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), 
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), 
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
+        margin=dict(l=20, r=20, t=60, b=20)
+        # 移除了 uniformtext_mode 設定
+    )
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("尚無工期資料，請檢查參數設定。")
@@ -330,11 +332,9 @@ if "集合住宅" in b_type and building_details_df is not None:
         details_list.append(f"{row['棟別名稱']}:{row['地上層數']}F")
     details_str = " / ".join(details_list)
 
-# 整理輔助措施文字
 aux_str = ", ".join(rw_aux_options) if rw_aux_options else "無"
 excavation_str = f"{excavation_system}"
-if rw_aux_options:
-    excavation_str += f" (輔助: {aux_str})"
+if rw_aux_options: excavation_str += f" (輔助: {aux_str})"
 
 report_rows = [
     ["項目名稱", project_name],
@@ -344,7 +344,7 @@ report_rows = [
     ["地上結構", struct_above], ["地下結構", struct_below],
     ["外牆型式", ext_wall],
     ["基礎型式", foundation_type], ["施工方式", b_method], 
-    ["開挖擋土", excavation_str], # 更新顯示輔助措施
+    ["開挖擋土", excavation_str],
     ["基地現況", site_condition], ["地質改良", soil_improvement],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
     ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"],
