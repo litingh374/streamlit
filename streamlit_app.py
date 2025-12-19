@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.24", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.25", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -180,11 +180,9 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [New Logic] 危評/外審 建議與手動勾選
-    # 1. 計算建議天數 (但暫不加入)
-    suggested_days = 0
+    # 危評/外審
     risk_reasons = []
-    
+    suggested_days = 0
     if display_max_floor >= 16:
         risk_reasons.append("地上 16F+ (結構外審)")
         suggested_days = 90
@@ -198,14 +196,11 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             if suggested_days == 90 and "結構外審" in str(risk_reasons):
                  suggested_days = 120
 
-    # 2. 顯示手動勾選區 (在 UI 上方區塊)
     st.markdown("---")
     st.markdown("##### ⚠️ 風險評估與行政審查")
     c_risk1, c_risk2 = st.columns([1, 3])
-    
     with c_risk1:
         enable_manual_review = st.checkbox("納入危評/外審緩衝期", value=False)
-        
     with c_risk2:
         if enable_manual_review:
             add_review_days = st.number_input("輸入緩衝天數", min_value=0, value=suggested_days if suggested_days > 0 else 90, step=30, label_visibility="collapsed")
@@ -214,25 +209,12 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             add_review_days = 0
             st.caption("未納入。若本案需結構外審或危評，建議勾選。")
 
-    # 3. 顯示提示框 (根據 偵測結果 與 勾選狀態)
     if risk_reasons:
         reasons_str = "、".join(risk_reasons)
         if not enable_manual_review:
-            # 有風險但未勾選 -> 黃色警告
-            st.markdown(f"""
-            <div class='warning-box'>
-                <b>⚠️ 系統建議：</b>偵測到本案符合 <b>{reasons_str}</b>。<br>
-                建議勾選上方「納入危評/外審緩衝期」，預估需增加 <b>{suggested_days} 天</b>。
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class='warning-box'><b>⚠️ 系統建議：</b>偵測到本案符合 <b>{reasons_str}</b>。<br>建議勾選上方「納入危評/外審緩衝期」，預估需增加 <b>{suggested_days} 天</b>。</div>""", unsafe_allow_html=True)
         else:
-            # 有風險且已勾選 -> 綠色確認
-            st.markdown(f"""
-            <div class='info-box'>
-                <b>✅ 設定完成：</b>已針對 <b>{reasons_str}</b> 納入緩衝期。<br>
-                將於第一階段工期增加 <b>{add_review_days} 天</b>。
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對 <b>{reasons_str}</b> 納入緩衝期。<br>將於第一階段工期增加 <b>{add_review_days} 天</b>。</div>""", unsafe_allow_html=True)
 
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
@@ -281,13 +263,19 @@ if "自訂" in prep_type_select and prep_days_custom is not None:
 else:
     d_prep_base = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
 
-# [Applied Manual Review Days]
 d_prep = d_prep_base + add_review_days
 
+# [Key Update v6.25] Demolition durations increased
 if "純空地" in site_condition: d_demo = 0; demo_note = "純空地"
-elif "有舊建物 (含舊地下室)" in site_condition: d_demo = int(100 * area_multiplier); demo_note = "全棟拆除(含地下室)"
-elif "有舊建物 (無地下室)" in site_condition: d_demo = int(45 * area_multiplier); demo_note = "地上拆除"
-else: d_demo = int(60 * area_multiplier); demo_note = "地下結構破除"
+elif "有舊建物 (含舊地下室)" in site_condition: 
+    d_demo = int(180 * area_multiplier) # Increased from 100 to 180
+    demo_note = "全棟拆除(含地下室)"
+elif "有舊建物 (無地下室)" in site_condition: 
+    d_demo = int(55 * area_multiplier)  # Increased from 45 to 55
+    demo_note = "地上拆除"
+else: 
+    d_demo = int(135 * area_multiplier) # Increased from 60 to 135
+    demo_note = "地下結構破除"
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
