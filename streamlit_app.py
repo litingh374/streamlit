@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.21", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.22", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -31,8 +31,8 @@ st.markdown("""
         border-left: 3px solid #1565c0;
     }
     .warning-box {
-        background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; 
-        border: 1px solid #ffeeba; margin-top: 10px; font-size: 14px;
+        background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; 
+        border-left: 6px solid #ffeeba; margin-top: 15px; font-size: 15px; line-height: 1.6;
     }
     div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; margin-top: 5px; }
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
@@ -176,27 +176,36 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [New Feature] 危評/外審 自動評估顯示
+    # [New Feature Updated] 危評/外審 明確提示
     risk_review_msg = []
     add_review_days = 0
     
-    # 邏輯: 地上>=16層 (約50m) -> 結構外審
+    # 邏輯 A: 結構外審 (通常 50m 以上) -> 約 16F
     if display_max_floor >= 16:
-        risk_review_msg.append("📏 樓高達 16F+ (結構外審)")
-        add_review_days = 90 # 增加3個月
+        risk_review_msg.append("📏 地上層數達 16F+ (建物高度約 50m 以上，需結構外審)")
+        add_review_days = 90
         
-    # 邏輯: 地下>=4層 (約15m開挖) -> 丁類危評
+    # 邏輯 B: 丁類危評 (通常 80m 以上) -> 約 25F
+    if display_max_floor >= 25:
+        risk_review_msg.append("🏗️ 地上層數達 25F+ (建物高度約 80m 以上，需丁類危評)")
+        add_review_days = 120 # 若同時滿足外審與危評，直接加 120 天
+    
+    # 邏輯 C: 丁類危評 (開挖 15m 以上) -> 約 B4
     if floors_down >= 4:
-        risk_review_msg.append("⛏️ 開挖達 B4+ (丁類危評)")
-        if add_review_days == 0: add_review_days = 60 # 若無外審，則加2個月
-        else: add_review_days = 120 # 若兩者皆有，合併考量加成 (約4個月)
+        risk_review_msg.append("⛏️ 地下層數達 B4+ (開挖深度約 15m 以上，需丁類危評)")
+        if add_review_days < 120: # 確保不重複疊加過多
+            add_review_days = max(add_review_days, 60)
+            if add_review_days == 90 and "結構外審" in str(risk_review_msg):
+                 add_review_days = 120 # 外審+危評
 
     if risk_review_msg:
-        msg_str = "、".join(risk_review_msg)
+        msg_str = "<br>".join([f"• {m}" for m in risk_review_msg])
         st.markdown(f"""
         <div class='warning-box'>
-            <b>⚠️ 自動偵測風險評估：</b>本案符合 {msg_str} 條件。<br>
-            已自動於「1. 規劃與前期作業」增加 <b>{add_review_days} 天</b> 行政審查緩衝期。
+            <b>⚠️ 自動偵測風險評估：</b><br>
+            {msg_str}<br>
+            <hr style="margin:5px 0; border-top:1px dashed #bba55a;">
+            👉 依據法規標準，已自動於「1. 規劃與前期作業」增加 <b>{add_review_days} 天</b> 行政審查緩衝期。
         </div>
         """, unsafe_allow_html=True)
 
