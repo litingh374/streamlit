@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.18", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.20", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -106,11 +106,9 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
 
     with dim_c3:
         floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
-        # [New Feature] 土方運棄管制評估
         enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, help="若勾選，將依據每日最大出土量計算開挖工期")
         
         if enable_soil_limit:
-            # 預估每層挖 3.5m, 鬆方係數 1.25
             est_soil_vol = base_area_m2 * (floors_down * 3.5) * 1.25 
             st.caption(f"預估總出土量(鬆方): {est_soil_vol:,.0f} m³")
             daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300, step=50, help="受棄土場或交通管制限制")
@@ -194,7 +192,10 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-struct_map_above = {"RC造": 14, "SRC造": 11, "SS造": 8, "SC造": 8}
+# [Key Update] 地上結構工期參數調整
+# RC: 25天, SRC: 25天, SC: 21天, SS: 7天 (21天/3層)
+struct_map_above = {"RC造": 25, "SRC造": 25, "SS造": 7, "SC造": 21}
+
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 multi_building_factor = 1.0
 if "集合住宅" in b_type and building_count > 1:
@@ -242,16 +243,12 @@ elif "鋼板樁" in excavation_system: base_retain = 25
 else: base_retain = 10 
 d_retain_work = int((base_retain + d_aux_wall_days) * area_multiplier)
 
-# [Key Update: Soil Disposal Calculation]
-d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) # 標準開挖工期
+d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
 
 if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
-    # 估算總土方 (假設每層開挖 3.5m, 鬆方係數 1.25)
     total_soil_m3 = base_area_m2 * (floors_down * 3.5) * 1.25
-    # 計算出土受限天數 = 總土方 / 每日上限
     d_excav_limited = math.ceil(total_soil_m3 / daily_soil_limit)
-    # 取大值 (考慮支撐架設仍需時間，故取 max)
     d_excav_phase = max(d_excav_std, d_excav_limited)
     if d_excav_limited > d_excav_std:
         excav_note = f"受限每日{daily_soil_limit}m³"
@@ -302,7 +299,7 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程 (13 Items)
+# [C] CPM 排程
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 p2_s = p1_e + timedelta(days=1)
@@ -399,7 +396,7 @@ schedule_data = [
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
     {"工項階段": "4. 擋土壁施作工程", "需用工作天": d_retain_work, "Start": p4_s, "Finish": p4_e, "備註": excav_str_display},
     {"工項階段": "5. 擋土支撐架設", "需用工作天": d_strut_install, "Start": p5_s, "Finish": p5_e, "備註": "開挖併行"},
-    {"工項階段": "6. 土方開挖工程", "需用工作天": d_earth_work, "Start": p6_s, "Finish": p6_e, "備註": excav_note}, # Use updated note
+    {"工項階段": "6. 土方開挖工程", "需用工作天": d_earth_work, "Start": p6_s, "Finish": p6_e, "備註": excav_note},
     {"工項階段": "7. 地下結構工程", "需用工作天": d_struct_below, "Start": p7_s, "Finish": p7_e, "備註": struct_note_below},
     {"工項階段": "8. 地上主體結構", "需用工作天": d_struct_body, "Start": p8_s, "Finish": p8_e, "備註": struct_note_above},
     {"工項階段": "9. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
