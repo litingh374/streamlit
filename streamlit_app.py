@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.28", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.29", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -73,14 +73,26 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         ])
         
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-        excavation_system = st.selectbox("開挖擋土系統", [
-            "連續壁 + 型鋼內支撐 (標準)",
-            "連續壁 + 地錨 (開挖動線佳)",
-            "全套管切削樁 + 型鋼內支撐",
-            "預壘樁/排樁 + 型鋼內支撐",
-            "鋼板樁 + 型鋼內支撐 (淺開挖)",
-            "放坡開挖/無支撐 (極快)"
-        ])
+        
+        # [Key Update v6.29] Dynamic Excavation System
+        if "逆打" in b_method:
+            # 逆打強制鎖定樓板支撐
+            excav_options = ["連續壁 + 結構樓板支撐 (逆打標準)"]
+            help_text = "逆打工法利用完成之樓板作為永久支撐，無需架設臨時型鋼。"
+        else:
+            # 順打顯示完整選項
+            excav_options = [
+                "連續壁 + 型鋼內支撐 (標準)",
+                "連續壁 + 地錨 (開挖動線佳)",
+                "全套管切削樁 + 型鋼內支撐",
+                "預壘樁/排樁 + 型鋼內支撐",
+                "鋼板樁 + 型鋼內支撐 (淺開挖)",
+                "放坡開挖/無支撐 (極快)"
+            ]
+            help_text = "請選擇擋土支撐方式"
+
+        excavation_system = st.selectbox("開挖擋土系統", excav_options, help=help_text)
+        
         rw_aux_options = []
         if "連續壁" in excavation_system:
             rw_aux_options = st.multiselect("連續壁輔助措施", ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"])
@@ -253,10 +265,16 @@ if "集合住宅" in b_type and building_count > 1:
 k_usage = k_usage_base * multi_building_factor
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
+
+# Excavation Map - Add Top Down Option
 excavation_map = {
-    "連續壁 + 型鋼內支撐 (標準)": 1.0, "連續壁 + 地錨 (開挖動線佳)": 0.9,
-    "全套管切削樁 + 型鋼內支撐": 0.95, "預壘樁/排樁 + 型鋼內支撐": 0.85,
-    "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, "放坡開挖/無支撐 (極快)": 0.5
+    "連續壁 + 型鋼內支撐 (標準)": 1.0, 
+    "連續壁 + 地錨 (開挖動線佳)": 0.9,
+    "連續壁 + 結構樓板支撐 (逆打標準)": 1.0, # Top-down has standard excav speed, structure is the bottleneck
+    "全套管切削樁 + 型鋼內支撐": 0.95, 
+    "預壘樁/排樁 + 型鋼內支撐": 0.85,
+    "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, 
+    "放坡開挖/無支撐 (極快)": 0.5
 }
 excav_multiplier = excavation_map.get(excavation_system, 1.0)
 
@@ -304,10 +322,9 @@ elif "全套管" in excavation_system: base_retain = 50
 elif "預壘樁" in excavation_system: base_retain = 40
 elif "鋼板樁" in excavation_system: base_retain = 25
 
-# [Key Update v6.28] Top-Down Plunge Columns
 d_plunge_col = 0
 if "逆打" in b_method:
-    d_plunge_col = int(45 * area_multiplier) # Add 45 days scaled by area for King Posts
+    d_plunge_col = int(45 * area_multiplier) 
 
 d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col) * area_multiplier)
 
@@ -323,14 +340,18 @@ if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
 else:
     d_excav_phase = d_excav_std
 
-if "放坡" in excavation_system or "無支撐" in excavation_system:
+# [Key Update v6.29] Strut Installation Logic
+d_strut_install = 0
+if "樓板支撐" in excavation_system:
+    d_strut_install = 0 # Top-Down uses slabs
+    d_earth_work = d_excav_phase
+elif "放坡" in excavation_system or "無支撐" in excavation_system:
     d_strut_install = 0
     d_earth_work = d_excav_phase
 else:
     d_strut_install = d_excav_phase
     d_earth_work = d_excav_phase
 
-# Underground Structure Logic
 days_per_floor_bd = 38
 days_per_strut_remove = 10
 
@@ -339,10 +360,9 @@ if "放坡" in excavation_system or "無支撐" in excavation_system or "逆打"
 else:
     d_strut_removal = floors_down * days_per_strut_remove
 
-# [Key Update v6.28] Top-down structure efficiency
 struct_efficiency_factor = 1.0
 if "逆打" in b_method:
-    struct_efficiency_factor = 1.2 # Top-down is slower for structure
+    struct_efficiency_factor = 1.2 
 
 d_struct_below_raw = ((floors_down * days_per_floor_bd * struct_efficiency_factor) + d_strut_removal + foundation_add)
 d_struct_below = int(d_struct_below_raw * area_multiplier)
@@ -485,12 +505,15 @@ if add_review_days > 0:
 else:
     prep_note = "要徑"
 
+strut_note = "開挖併行"
+if "逆打" in b_method: strut_note = "樓板支撐(免架設)"
+
 schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": prep_note},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": demo_note},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
     {"工項階段": "4. 擋土壁施作工程", "需用工作天": d_retain_work, "Start": p4_s, "Finish": p4_e, "備註": excav_str_display},
-    {"工項階段": "5. 擋土支撐架設", "需用工作天": d_strut_install, "Start": p5_s, "Finish": p5_e, "備註": "開挖併行"},
+    {"工項階段": "5. 擋土支撐架設", "需用工作天": d_strut_install, "Start": p5_s, "Finish": p5_e, "備註": strut_note},
     {"工項階段": "6. 土方開挖工程", "需用工作天": d_earth_work, "Start": p6_s, "Finish": p6_e, "備註": excav_note},
     {"工項階段": "7. 地下結構工程", "需用工作天": d_struct_below, "Start": p7_s, "Finish": p7_e, "備註": struct_note_below},
     {"工項階段": "8. 地上主體結構", "需用工作天": d_struct_body, "Start": p8_s, "Finish": p8_e, "備註": struct_note_above},
@@ -502,7 +525,9 @@ schedule_data = [
 ]
 
 sched_display_df = pd.DataFrame(schedule_data)
+# Filter out tasks with 0 days (e.g. strut installation in top-down)
 sched_display_df = sched_display_df[sched_display_df["需用工作天"] > 0]
+
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
