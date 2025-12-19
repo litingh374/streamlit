@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.35", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.36", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -55,26 +55,19 @@ project_name = st.text_input("📝 請輸入專案名稱", value="未命名專�
 st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
-    # === 第一區：核心構造與工法 (Layout Updated) ===
+    # === 第一區：核心構造與工法 (Layout Updated v6.36) ===
     st.markdown("<div class='section-header'>1. 核心構造與工法</div>", unsafe_allow_html=True)
     
-    # Row 1: The Core 3 (Aligned)
-    c1, c2, c3 = st.columns(3)
+    # 4 Columns for Core Info: Type | Method | Structure Above | Structure Below
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
     with c2:
-        struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
-    with c3:
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
-
-    # Row 2: Secondary Core Info
-    c4, c5, c6 = st.columns(3)
+    with c3:
+        struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
     with c4:
         struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
-    with c5:
-        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
-    with c6:
-        scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
     # === 第二區：基地現況與前置 ===
     st.markdown("<div class='section-header'>2. 基地現況與前置作業</div>", unsafe_allow_html=True)
@@ -228,6 +221,14 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             st.markdown(f"""<div class='warning-box'><b>⚠️ 系統建議：</b>偵測到本案符合以下條件：<br>{reasons_str}<br><hr style="margin:5px 0; border-top:1px dashed #bba55a;">建議至「2. 基地現況」區塊勾選「納入危評/外審緩衝期」，預估需增加 <b>{suggested_days} 天</b>。</div>""", unsafe_allow_html=True)
         else:
             st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br>已加入 <b>{manual_review_days_input} 天</b>。</div>""", unsafe_allow_html=True)
+
+    # === 第五區：外觀與機電裝修 (Moved Here v6.36) ===
+    st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
+    f1, f2 = st.columns(2)
+    with f1:
+        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
+    with f2:
+        scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
