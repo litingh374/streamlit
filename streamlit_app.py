@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.30", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.31", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -390,6 +390,15 @@ else:
     d_insp = d_insp_base
     insp_note = "標準驗收流程"
 
+# [Key Update v6.31] Tower Crane Logic
+needs_tower_crane = False
+if struct_above in ["SS造", "SC造", "SRC造"] or display_max_floor >= 15:
+    needs_tower_crane = True
+
+d_tower_crane = 0
+if needs_tower_crane:
+    d_tower_crane = 20 # 20 days for install + inspection
+
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
     curr = start_date
@@ -431,16 +440,39 @@ if "逆打" in b_method or "雙順打" in b_method:
     p7_e = get_end_date(p7_s, d_struct_below)
     
     lag_1f_slab = int(60 * area_multiplier)
-    p8_s = get_end_date(p6_s, lag_1f_slab) 
+    p8_s_pre = get_end_date(p6_s, lag_1f_slab) 
     struct_note_below = f"併行 ({struct_note_base})"
     struct_note_above = f"併行 ({display_max_floor}F+{display_max_roof}R)"
 else:
     p7_s = p_excav_finish + timedelta(days=1)
     p7_e = get_end_date(p7_s, d_struct_below)
     
-    p8_s = p7_e + timedelta(days=1)
+    p8_s_pre = p7_e + timedelta(days=1)
     struct_note_below = f"要徑 ({struct_note_base})"
     struct_note_above = f"順打 ({display_max_floor}F+{display_max_roof}R)"
+
+# [Insert Tower Crane Check]
+p_tower_s = p1_s # Default dummy
+p_tower_e = p1_s
+if needs_tower_crane:
+    # 安排在地上結構開始前，與地下結構尾聲並行
+    # 若順打: 放在地下結構完成前 20 天開始，或直接卡在地上結構前
+    # 簡單邏輯: 塔吊完成日 = 地上結構開始日的前一天
+    p_tower_e = p8_s_pre - timedelta(days=1)
+    # 反推開始日 (需扣除非工作日，這裡簡化用 get_end_date 的反向邏輯近似)
+    # 為求準確，直接設定 Start = P8_Start - 20 working days is hard without reverse function
+    # Let's set Start = P8_Start (planned) and push P8_Start if needed.
+    # Strategy: Insert Crane as a task starting after Excavation or Soil.
+    # Better: Crane starts 20 days before P8_Start_Pre. 
+    # Let's anchor Crane Finish to P8_Start_Pre.
+    # To keep CPM simple: Let Crane Start = P8_Start_Pre - 30 calendar days (approx).
+    p_tower_s = p_tower_e - timedelta(days=25) # Approx 20 working days
+    p_tower_e = get_end_date(p_tower_s, d_tower_crane)
+    
+    # Update P8 Start to be max of original or Crane Finish
+    p8_s = max(p8_s_pre, p_tower_e + timedelta(days=1))
+else:
+    p8_s = p8_s_pre
 
 p8_e = get_end_date(p8_s, d_struct_body)
 lag_ext = int(d_struct_body * 0.5)
@@ -512,17 +544,32 @@ schedule_data = [
     {"工項階段": "5. 擋土支撐架設", "需用工作天": d_strut_install, "Start": p5_s, "Finish": p5_e, "備註": strut_note},
     {"工項階段": "6. 土方開挖工程", "需用工作天": d_earth_work, "Start": p6_s, "Finish": p6_e, "備註": excav_note},
     {"工項階段": "7. 地下結構工程", "需用工作天": d_struct_below, "Start": p7_s, "Finish": p7_e, "備註": struct_note_below},
+]
+
+# [Insert Crane Item]
+if needs_tower_crane:
+    schedule_data.append({
+        "工項階段": "7.5 塔吊安裝與安檢", 
+        "需用工作天": d_tower_crane, 
+        "Start": p_tower_s, 
+        "Finish": p_tower_e, 
+        "備註": "含勞檢危險性機械檢查"
+    })
+
+schedule_data.extend([
     {"工項階段": "8. 地上主體結構", "需用工作天": d_struct_body, "Start": p8_s, "Finish": p8_e, "備註": struct_note_above},
     {"工項階段": "9. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "10. 機電管線工程", "需用工作天": d_mep, "Start": p10_s, "Finish": p10_e, "備註": "併行 (選配)"},
     {"工項階段": "11. 室內裝修工程", "需用工作天": d_fit_out, "Start": p11_s, "Finish": p11_e, "備註": "併行 (選配)"},
     {"工項階段": "12. 景觀工程", "需用工作天": d_landscape, "Start": p12_s, "Finish": p12_e, "備註": "併行 (選配)"},
     {"工項階段": "13. 驗收取得使照", "需用工作天": d_insp, "Start": p13_s, "Finish": p13_e, "備註": insp_note},
-]
+])
 
 sched_display_df = pd.DataFrame(schedule_data)
-# Filter out tasks with 0 days (e.g. strut installation in top-down)
+# Filter out tasks with 0 days
 sched_display_df = sched_display_df[sched_display_df["需用工作天"] > 0]
+# Sort by Start Date to keep crane in visual order
+sched_display_df = sched_display_df.sort_values(by="Start")
 
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
@@ -532,7 +579,7 @@ st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始"
 st.subheader("📊 專案進度甘特圖")
 if not sched_display_df.empty:
     gantt_df = sched_display_df.copy()
-    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#696969", "#708090", "#A0522D", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#556B2F", "#DAA520"]
+    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#696969", "#708090", "#A0522D", "#DC143C", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#556B2F", "#DAA520"]
     fig = px.timeline(
         gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
         color_discrete_sequence=professional_colors, text="工項階段", 
