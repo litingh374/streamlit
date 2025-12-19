@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.20", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.21", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -29,6 +29,10 @@ st.markdown("""
         background-color: #e3f2fd; padding: 5px 10px; border-radius: 5px;
         font-size: 14px; color: #1565c0; margin-top: -10px; margin-bottom: 10px;
         border-left: 3px solid #1565c0;
+    }
+    .warning-box {
+        background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; 
+        border: 1px solid #ffeeba; margin-top: 10px; font-size: 14px;
     }
     div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; margin-top: 5px; }
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
@@ -153,6 +157,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
                 display_max_floor = int(row_max["地上層數"])
                 display_max_roof = int(row_max["屋突層數"])
                 building_count = len(edited_df)
+                
                 building_details_df = edited_df
                 st.success(f"系統偵測共 **{building_count}** 棟。結構要徑依據 **{row_max['棟別名稱']}** 計算。")
             else:
@@ -170,6 +175,30 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_floor = floors_up
         display_max_roof = floors_roof
         building_count = 1
+
+    # [New Feature] 危評/外審 自動評估顯示
+    risk_review_msg = []
+    add_review_days = 0
+    
+    # 邏輯: 地上>=16層 (約50m) -> 結構外審
+    if display_max_floor >= 16:
+        risk_review_msg.append("📏 樓高達 16F+ (結構外審)")
+        add_review_days = 90 # 增加3個月
+        
+    # 邏輯: 地下>=4層 (約15m開挖) -> 丁類危評
+    if floors_down >= 4:
+        risk_review_msg.append("⛏️ 開挖達 B4+ (丁類危評)")
+        if add_review_days == 0: add_review_days = 60 # 若無外審，則加2個月
+        else: add_review_days = 120 # 若兩者皆有，合併考量加成 (約4個月)
+
+    if risk_review_msg:
+        msg_str = "、".join(risk_review_msg)
+        st.markdown(f"""
+        <div class='warning-box'>
+            <b>⚠️ 自動偵測風險評估：</b>本案符合 {msg_str} 條件。<br>
+            已自動於「1. 規劃與前期作業」增加 <b>{add_review_days} 天</b> 行政審查緩衝期。
+        </div>
+        """, unsafe_allow_html=True)
 
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
@@ -192,8 +221,6 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-# [Key Update] 地上結構工期參數調整
-# RC: 25天, SRC: 25天, SC: 21天, SS: 7天 (21天/3層)
 struct_map_above = {"RC造": 25, "SRC造": 25, "SS造": 7, "SC造": 21}
 
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
@@ -216,9 +243,12 @@ if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10
 
 # [A] 工項天數計算
 if "自訂" in prep_type_select and prep_days_custom is not None:
-    d_prep = int(prep_days_custom)
+    d_prep_base = int(prep_days_custom)
 else:
-    d_prep = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
+    d_prep_base = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
+
+# [Key Update] 將危評天數加入前置作業
+d_prep = d_prep_base + add_review_days
 
 if "純空地" in site_condition: d_demo = 0; demo_note = "純空地"
 elif "有舊建物 (含舊地下室)" in site_condition: d_demo = int(100 * area_multiplier); demo_note = "全棟拆除(含地下室)"
@@ -390,8 +420,13 @@ st.subheader("📅 詳細工項進度建議表")
 excav_str_display = f"工法:{excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
 
+if add_review_days > 0:
+    prep_note = f"含危評審查 (+{add_review_days}天)"
+else:
+    prep_note = "要徑"
+
 schedule_data = [
-    {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": "要徑"},
+    {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": prep_note},
     {"工項階段": "2. 建物拆除與整地", "需用工作天": d_demo, "Start": p2_s, "Finish": p2_e, "備註": demo_note},
     {"工項階段": "3. 地質改良工程", "需用工作天": d_soil, "Start": p_soil_s, "Finish": p_soil_e, "備註": "要徑"},
     {"工項階段": "4. 擋土壁施作工程", "需用工作天": d_retain_work, "Start": p4_s, "Finish": p4_e, "備註": excav_str_display},
@@ -470,6 +505,7 @@ report_rows = [
     ["樓層規模", f"地下 {floors_down} B / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"],
     ["納入工項", ", ".join(scope_options)],
     ["土方管制", f"每日限 {daily_soil_limit} m³" if enable_soil_limit else "無"],
+    ["危評/外審", f"增加 {add_review_days} 天 (前期)" if add_review_days > 0 else "無"],
     ["", ""],
     ["[ 進度分析 ]", ""]
 ]
