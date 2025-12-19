@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.29", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.30", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -74,13 +74,10 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
         
-        # [Key Update v6.29] Dynamic Excavation System
         if "逆打" in b_method:
-            # 逆打強制鎖定樓板支撐
             excav_options = ["連續壁 + 結構樓板支撐 (逆打標準)"]
             help_text = "逆打工法利用完成之樓板作為永久支撐，無需架設臨時型鋼。"
         else:
-            # 順打顯示完整選項
             excav_options = [
                 "連續壁 + 型鋼內支撐 (標準)",
                 "連續壁 + 地錨 (開挖動線佳)",
@@ -200,16 +197,17 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
+    # [Corrected Risk Logic v6.30]
     risk_reasons = []
     suggested_days = 0
     if display_max_floor >= 16:
-        risk_reasons.append("地上 16F+ (結構外審)")
+        risk_reasons.append("📏 地上層數達 16F+ (建物高度約 50m 以上，需結構外審)")
         suggested_days = 90
     if display_max_floor >= 25:
-        risk_reasons.append("地上 25F+ (丁類危評)")
+        risk_reasons.append("🏗️ 地上層數達 25F+ (建物高度約 80m 以上，需丁類危評)")
         suggested_days = 120
     if floors_down >= 4:
-        risk_reasons.append("地下 B4+ (丁類危評)")
+        risk_reasons.append("⛏️ 地下層數達 B4+ (開挖深度約 15m 以上，需丁類危評)")
         if suggested_days < 120:
             suggested_days = max(suggested_days, 60)
             if suggested_days == 90 and "結構外審" in str(risk_reasons):
@@ -229,11 +227,11 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             st.caption("未納入。若本案需結構外審或危評，建議勾選。")
 
     if risk_reasons:
-        reasons_str = "、".join(risk_reasons)
+        reasons_str = "<br>".join([f"• {m}" for m in risk_reasons])
         if not enable_manual_review:
-            st.markdown(f"""<div class='warning-box'><b>⚠️ 系統建議：</b>偵測到本案符合 <b>{reasons_str}</b>。<br>建議勾選上方「納入危評/外審緩衝期」，預估需增加 <b>{suggested_days} 天</b>。</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class='warning-box'><b>⚠️ 系統建議：</b>偵測到本案符合以下條件：<br>{reasons_str}<br><hr style="margin:5px 0; border-top:1px dashed #bba55a;">建議勾選上方「納入危評/外審緩衝期」，預估需增加 <b>{suggested_days} 天</b>。</div>""", unsafe_allow_html=True)
         else:
-            st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對 <b>{reasons_str}</b> 納入緩衝期。<br>將於第一階段工期增加 <b>{add_review_days} 天</b>。</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br><hr style="margin:5px 0; border-top:1px dashed #155724;">將於第一階段工期增加 <b>{add_review_days} 天</b>。</div>""", unsafe_allow_html=True)
 
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
@@ -266,11 +264,10 @@ k_usage = k_usage_base * multi_building_factor
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
-# Excavation Map - Add Top Down Option
 excavation_map = {
     "連續壁 + 型鋼內支撐 (標準)": 1.0, 
     "連續壁 + 地錨 (開挖動線佳)": 0.9,
-    "連續壁 + 結構樓板支撐 (逆打標準)": 1.0, # Top-down has standard excav speed, structure is the bottleneck
+    "連續壁 + 結構樓板支撐 (逆打標準)": 1.0, 
     "全套管切削樁 + 型鋼內支撐": 0.95, 
     "預壘樁/排樁 + 型鋼內支撐": 0.85,
     "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, 
@@ -340,10 +337,9 @@ if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
 else:
     d_excav_phase = d_excav_std
 
-# [Key Update v6.29] Strut Installation Logic
 d_strut_install = 0
 if "樓板支撐" in excavation_system:
-    d_strut_install = 0 # Top-Down uses slabs
+    d_strut_install = 0 
     d_earth_work = d_excav_phase
 elif "放坡" in excavation_system or "無支撐" in excavation_system:
     d_strut_install = 0
