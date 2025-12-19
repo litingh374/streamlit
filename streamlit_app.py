@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.31", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.32", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -97,6 +97,17 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     with col3:
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"
         ])
+        
+        # [Key Update v6.32] Advanced Demolition Options
+        is_deep_demo = "舊地下室" in site_condition
+        obstruction_method = "一般怪手破除"
+        backfill_method = "回填舊地下室 (標準)"
+        
+        if is_deep_demo:
+            st.markdown("⬇️ **舊地下室處理策略**")
+            backfill_method = st.radio("施工平台建置", ["回填舊地下室 (標準)", "不回填 (架設施工構台)"], horizontal=True, help="不回填雖省土方費，但架設構台極耗時")
+            obstruction_method = st.selectbox("地中障礙清障方式", ["一般怪手破除", "深導溝 (Deep Guide Wall)", "全套管切削 (All-Casing)"], help="全套管切削適用於遭遇舊基樁或深層大底")
+        
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
         prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
         if "自訂" in prep_type_select:
@@ -197,7 +208,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Corrected Risk Logic v6.30]
     risk_reasons = []
     suggested_days = 0
     if display_max_floor >= 16:
@@ -287,16 +297,25 @@ else:
 
 d_prep = d_prep_base + add_review_days
 
+# [Key Update v6.32] Logic for Backfill & Obstruction Removal
 if "純空地" in site_condition: d_demo = 0; demo_note = "純空地"
-elif "有舊建物 (含舊地下室)" in site_condition: 
-    d_demo = int(180 * area_multiplier)
-    demo_note = "全棟拆除(含地下室)"
-elif "有舊建物 (無地下室)" in site_condition: 
-    d_demo = int(55 * area_multiplier)
-    demo_note = "地上拆除"
-else: 
-    d_demo = int(135 * area_multiplier)
-    demo_note = "地下結構破除"
+elif "有舊建物" in site_condition or "僅存舊地下室" in site_condition:
+    base_demo = 135 if "僅存" in site_condition else 180
+    if "無地下室" in site_condition: base_demo = 55
+    
+    # 1. Backfill Effect: No backfill = faster demo, but adds platform time later
+    if "不回填" in backfill_method:
+        base_demo -= 30 # Save time on backfilling
+        demo_note = "拆除(不回填)"
+    else:
+        demo_note = "拆除(含回填)"
+        
+    # 2. Obstruction Removal Effect
+    if "全套管" in obstruction_method:
+        base_demo += 60 # Massive increase for pile removal
+        demo_note += " +全套管清障"
+    
+    d_demo = int(base_demo * area_multiplier)
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
@@ -314,7 +333,17 @@ d_dw_setup = 0
 
 if "連續壁" in excavation_system: 
     base_retain = 60
-    d_dw_setup = int(14 * area_multiplier)
+    # [Logic] If Deep Guide Wall -> Add time
+    if "深導溝" in obstruction_method:
+        base_setup = 25 # Standard 14 + 11 extra
+    else:
+        base_setup = 14
+        
+    # [Logic] If No Backfill -> Add Platform Setup time
+    if "不回填" in backfill_method:
+        base_setup += 45 # Building trestle platform takes long
+    
+    d_dw_setup = int(base_setup * area_multiplier)
 elif "全套管" in excavation_system: base_retain = 50
 elif "預壘樁" in excavation_system: base_retain = 40
 elif "鋼板樁" in excavation_system: base_retain = 25
@@ -390,15 +419,6 @@ else:
     d_insp = d_insp_base
     insp_note = "標準驗收流程"
 
-# [Key Update v6.31] Tower Crane Logic
-needs_tower_crane = False
-if struct_above in ["SS造", "SC造", "SRC造"] or display_max_floor >= 15:
-    needs_tower_crane = True
-
-d_tower_crane = 0
-if needs_tower_crane:
-    d_tower_crane = 20 # 20 days for install + inspection
-
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
     curr = start_date
@@ -451,25 +471,20 @@ else:
     struct_note_below = f"要徑 ({struct_note_base})"
     struct_note_above = f"順打 ({display_max_floor}F+{display_max_roof}R)"
 
-# [Insert Tower Crane Check]
+needs_tower_crane = False
+if struct_above in ["SS造", "SC造", "SRC造"] or display_max_floor >= 15:
+    needs_tower_crane = True
+
+d_tower_crane = 0
+if needs_tower_crane:
+    d_tower_crane = 20 
+
 p_tower_s = p1_s # Default dummy
 p_tower_e = p1_s
 if needs_tower_crane:
-    # 安排在地上結構開始前，與地下結構尾聲並行
-    # 若順打: 放在地下結構完成前 20 天開始，或直接卡在地上結構前
-    # 簡單邏輯: 塔吊完成日 = 地上結構開始日的前一天
     p_tower_e = p8_s_pre - timedelta(days=1)
-    # 反推開始日 (需扣除非工作日，這裡簡化用 get_end_date 的反向邏輯近似)
-    # 為求準確，直接設定 Start = P8_Start - 20 working days is hard without reverse function
-    # Let's set Start = P8_Start (planned) and push P8_Start if needed.
-    # Strategy: Insert Crane as a task starting after Excavation or Soil.
-    # Better: Crane starts 20 days before P8_Start_Pre. 
-    # Let's anchor Crane Finish to P8_Start_Pre.
-    # To keep CPM simple: Let Crane Start = P8_Start_Pre - 30 calendar days (approx).
-    p_tower_s = p_tower_e - timedelta(days=25) # Approx 20 working days
+    p_tower_s = p_tower_e - timedelta(days=25) 
     p_tower_e = get_end_date(p_tower_s, d_tower_crane)
-    
-    # Update P8 Start to be max of original or Crane Finish
     p8_s = max(p8_s_pre, p_tower_e + timedelta(days=1))
 else:
     p8_s = p8_s_pre
@@ -527,6 +542,7 @@ excav_str_display = f"工法:{excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
 if d_dw_setup > 0: excav_str_display += "\n(含導溝/鋪面/沉澱池)"
 if d_plunge_col > 0: excav_str_display += f"\n(含逆打鋼柱)"
+if "不回填" in backfill_method and d_dw_setup > 20: excav_str_display += "\n(含施工構台架設)"
 
 if add_review_days > 0:
     prep_note = f"含危評審查 (+{add_review_days}天)"
@@ -546,7 +562,6 @@ schedule_data = [
     {"工項階段": "7. 地下結構工程", "需用工作天": d_struct_below, "Start": p7_s, "Finish": p7_e, "備註": struct_note_below},
 ]
 
-# [Insert Crane Item]
 if needs_tower_crane:
     schedule_data.append({
         "工項階段": "7.5 塔吊安裝與安檢", 
@@ -566,9 +581,7 @@ schedule_data.extend([
 ])
 
 sched_display_df = pd.DataFrame(schedule_data)
-# Filter out tasks with 0 days
 sched_display_df = sched_display_df[sched_display_df["需用工作天"] > 0]
-# Sort by Start Date to keep crane in visual order
 sched_display_df = sched_display_df.sort_values(by="Start")
 
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
@@ -632,6 +645,7 @@ report_rows = [
     ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"],
     ["樓層規模", f"地下 {floors_down} B / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"],
     ["納入工項", ", ".join(scope_options)],
+    ["舊地下室處理", f"{backfill_method} / {obstruction_method}" if is_deep_demo else "無"],
     ["土方管制", f"每日限 {daily_soil_limit} m³" if enable_soil_limit else "無"],
     ["危評/外審", f"增加 {add_review_days} 天 (前期)" if add_review_days > 0 else "無"],
     ["", ""],
