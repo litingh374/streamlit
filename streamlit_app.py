@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.25", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.26", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -180,7 +180,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # 危評/外審
     risk_reasons = []
     suggested_days = 0
     if display_max_floor >= 16:
@@ -265,16 +264,15 @@ else:
 
 d_prep = d_prep_base + add_review_days
 
-# [Key Update v6.25] Demolition durations increased
 if "純空地" in site_condition: d_demo = 0; demo_note = "純空地"
 elif "有舊建物 (含舊地下室)" in site_condition: 
-    d_demo = int(180 * area_multiplier) # Increased from 100 to 180
+    d_demo = int(180 * area_multiplier)
     demo_note = "全棟拆除(含地下室)"
 elif "有舊建物 (無地下室)" in site_condition: 
-    d_demo = int(55 * area_multiplier)  # Increased from 45 to 55
+    d_demo = int(55 * area_multiplier)
     demo_note = "地上拆除"
 else: 
-    d_demo = int(135 * area_multiplier) # Increased from 60 to 135
+    d_demo = int(135 * area_multiplier)
     demo_note = "地下結構破除"
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
@@ -288,12 +286,19 @@ elif "微型樁" in foundation_type: foundation_add = 30
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor) 
 
-if "連續壁" in excavation_system: base_retain = 60
+# [Key Update v6.26] Diaphragm Wall Setup
+base_retain = 10 # Default
+d_dw_setup = 0 # Default setup time
+
+if "連續壁" in excavation_system: 
+    base_retain = 60
+    # 假設工程時間 (導溝/鋪面/沉澱池) - 約 14 天 x 規模係數
+    d_dw_setup = int(14 * area_multiplier)
 elif "全套管" in excavation_system: base_retain = 50
 elif "預壘樁" in excavation_system: base_retain = 40
 elif "鋼板樁" in excavation_system: base_retain = 25
-else: base_retain = 10 
-d_retain_work = int((base_retain + d_aux_wall_days) * area_multiplier)
+
+d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days) * area_multiplier)
 
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
@@ -454,6 +459,9 @@ with res_col4:
 st.subheader("📅 詳細工項進度建議表")
 excav_str_display = f"工法:{excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
+# [New Display Update]
+if d_dw_setup > 0:
+    excav_str_display += "\n(含導溝/鋪面/沉澱池)"
 
 if add_review_days > 0:
     prep_note = f"含危評審查 (+{add_review_days}天)"
