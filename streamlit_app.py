@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.32", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.33", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -98,15 +98,21 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"
         ])
         
-        # [Key Update v6.32] Advanced Demolition Options
+        # [Key Update v6.33] Advanced Basement Treatment
         is_deep_demo = "舊地下室" in site_condition
-        obstruction_method = "一般怪手破除"
-        backfill_method = "回填舊地下室 (標準)"
+        obs_strategy = "無"
+        deep_gw_seq = "無"
         
         if is_deep_demo:
             st.markdown("⬇️ **舊地下室處理策略**")
-            backfill_method = st.radio("施工平台建置", ["回填舊地下室 (標準)", "不回填 (架設施工構台)"], horizontal=True, help="不回填雖省土方費，但架設構台極耗時")
-            obstruction_method = st.selectbox("地中障礙清障方式", ["一般怪手破除", "深導溝 (Deep Guide Wall)", "全套管切削 (All-Casing)"], help="全套管切削適用於遭遇舊基樁或深層大底")
+            obs_strategy = st.radio("清障與導溝策略", ["深導溝工法", "全套管清障工法"], horizontal=True)
+            
+            if obs_strategy == "深導溝工法":
+                deep_gw_seq = st.selectbox("深導溝施作順序", 
+                                           ["先回填後施作 (標準/工期長)", "邊回填邊施作 (重疊/工期短)"],
+                                           help="「邊回填邊施作」可節省回填等待時間，但施工動線較複雜。")
+            else:
+                st.info("💡 全套管工序：清障切削 ➔ 回填CLSM ➔ 地質改良樁 ➔ 一般導溝")
         
         soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"])
         prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"])
@@ -208,6 +214,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
+    # 危評/外審
     risk_reasons = []
     suggested_days = 0
     if display_max_floor >= 16:
@@ -297,25 +304,51 @@ else:
 
 d_prep = d_prep_base + add_review_days
 
-# [Key Update v6.32] Logic for Backfill & Obstruction Removal
-if "純空地" in site_condition: d_demo = 0; demo_note = "純空地"
-elif "有舊建物" in site_condition or "僅存舊地下室" in site_condition:
-    base_demo = 135 if "僅存" in site_condition else 180
-    if "無地下室" in site_condition: base_demo = 55
-    
-    # 1. Backfill Effect: No backfill = faster demo, but adds platform time later
-    if "不回填" in backfill_method:
-        base_demo -= 30 # Save time on backfilling
-        demo_note = "拆除(不回填)"
+# [Key Update v6.33] Basement & Guide Wall Strategy
+d_demo = 0
+demo_note = ""
+d_dw_setup = 0 
+setup_note = ""
+
+if "純空地" in site_condition:
+    d_demo = 0
+    demo_note = "純空地"
+elif is_deep_demo or "有舊建物" in site_condition:
+    if "無地下室" in site_condition:
+        d_demo = int(55 * area_multiplier)
+        demo_note = "地上拆除"
     else:
-        demo_note = "拆除(含回填)"
-        
-    # 2. Obstruction Removal Effect
-    if "全套管" in obstruction_method:
-        base_demo += 60 # Massive increase for pile removal
-        demo_note += " +全套管清障"
-    
-    d_demo = int(base_demo * area_multiplier)
+        # 處理有舊地下室的邏輯
+        if obs_strategy == "全套管清障工法":
+            # 全套管：拆除時間(含切削)長，前置時間(CLSM+地改)也長
+            base_demo_time = 180 + 45 # 基準180 + 切削45
+            d_demo = int(base_demo_time * area_multiplier)
+            demo_note = "全套管清障 (含舊結構切削)"
+            
+            # 導溝前置 = CLSM回填(15) + 地質改良(20) + 一般導溝(14)
+            d_dw_setup = int((15 + 20 + 14) * area_multiplier)
+            setup_note = "回填CLSM + 地質改良 + 導溝"
+            
+        elif obs_strategy == "深導溝工法":
+            # 深導溝：依順序決定
+            if "先回填" in deep_gw_seq:
+                d_demo = int(180 * area_multiplier) # 完整拆除回填
+                demo_note = "先回填 (標準)"
+                d_dw_setup = int(30 * area_multiplier) # 深導溝較慢 (30天)
+                setup_note = "深導溝施作"
+            else:
+                # 邊回填邊施作
+                d_demo = int(150 * area_multiplier) # 重疊施工，拆除期縮短
+                demo_note = "邊回填邊施作 (重疊)"
+                d_dw_setup = int(25 * area_multiplier) # 稍微快一點
+                setup_note = "深導溝 (同步施作)"
+        else:
+            # 預設 (未選擇或標準)
+            d_demo = int(135 * area_multiplier)
+            demo_note = "地下結構破除"
+
+else:
+    d_demo = 0
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
@@ -329,21 +362,13 @@ sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor) 
 
 base_retain = 10 
-d_dw_setup = 0 
-
 if "連續壁" in excavation_system: 
     base_retain = 60
-    # [Logic] If Deep Guide Wall -> Add time
-    if "深導溝" in obstruction_method:
-        base_setup = 25 # Standard 14 + 11 extra
-    else:
-        base_setup = 14
-        
-    # [Logic] If No Backfill -> Add Platform Setup time
-    if "不回填" in backfill_method:
-        base_setup += 45 # Building trestle platform takes long
-    
-    d_dw_setup = int(base_setup * area_multiplier)
+    # 若上方已經計算過 d_dw_setup (針對舊地下室)，則直接使用
+    # 若是素地但選連續壁，給標準 14 天
+    if d_dw_setup == 0:
+        d_dw_setup = int(14 * area_multiplier)
+        setup_note = "標準導溝/鋪面"
 elif "全套管" in excavation_system: base_retain = 50
 elif "預壘樁" in excavation_system: base_retain = 40
 elif "鋼板樁" in excavation_system: base_retain = 25
@@ -540,9 +565,8 @@ with res_col4:
 st.subheader("📅 詳細工項進度建議表")
 excav_str_display = f"工法:{excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
-if d_dw_setup > 0: excav_str_display += "\n(含導溝/鋪面/沉澱池)"
+if d_dw_setup > 0: excav_str_display += f"\n({setup_note})"
 if d_plunge_col > 0: excav_str_display += f"\n(含逆打鋼柱)"
-if "不回填" in backfill_method and d_dw_setup > 20: excav_str_display += "\n(含施工構台架設)"
 
 if add_review_days > 0:
     prep_note = f"含危評審查 (+{add_review_days}天)"
@@ -645,7 +669,7 @@ report_rows = [
     ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"],
     ["樓層規模", f"地下 {floors_down} B / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"],
     ["納入工項", ", ".join(scope_options)],
-    ["舊地下室處理", f"{backfill_method} / {obstruction_method}" if is_deep_demo else "無"],
+    ["舊地下室處理", f"{obs_strategy} / {deep_gw_seq}" if is_deep_demo else "無"],
     ["土方管制", f"每日限 {daily_soil_limit} m³" if enable_soil_limit else "無"],
     ["危評/外審", f"增加 {add_review_days} 天 (前期)" if add_review_days > 0 else "無"],
     ["", ""],
