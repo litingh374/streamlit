@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.34", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.35", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -55,21 +55,26 @@ project_name = st.text_input("📝 請輸入專案名稱", value="未命名專�
 st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
-    # === 第一區：核心構造與工法 ===
+    # === 第一區：核心構造與工法 (Layout Updated) ===
     st.markdown("<div class='section-header'>1. 核心構造與工法</div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
     
+    # Row 1: The Core 3 (Aligned)
+    c1, c2, c3 = st.columns(3)
     with c1:
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
-    
     with c2:
-        st.markdown("**結構型式**")
-        sc1, sc2 = st.columns(2)
-        with sc1: struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
-        with sc2: struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
-        
+        struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
     with c3:
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
+
+    # Row 2: Secondary Core Info
+    c4, c5, c6 = st.columns(3)
+    with c4:
+        struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
+    with c5:
+        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
+    with c6:
+        scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
     # === 第二區：基地現況與前置 ===
     st.markdown("<div class='section-header'>2. 基地現況與前置作業</div>", unsafe_allow_html=True)
@@ -78,7 +83,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     with s1:
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"])
         
-        # 進階拆除選項邏輯
         is_deep_demo = "舊地下室" in site_condition
         obstruction_method = "一般怪手破除"
         backfill_method = "回填舊地下室 (標準)"
@@ -102,7 +106,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         else:
             prep_days_custom = None
         
-        # 危評/外審 手動勾選區 (先初始化變數，稍後根據樓層判斷顯示提示)
         enable_manual_review = st.checkbox("納入危評/外審緩衝期", value=False)
         manual_review_days_input = 0
         if enable_manual_review:
@@ -113,7 +116,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     g1, g2, g3 = st.columns(3)
     
     with g1:
-        # 動態擋土選單
         if "逆打" in b_method:
             excav_options = ["連續壁 + 結構樓板支撐 (逆打標準)"]
             help_text = "逆打工法強制使用樓板支撐"
@@ -138,7 +140,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         ])
 
     with g3:
-        # 預留給未來擴充，或放土壤液化提示
         st.write("") 
 
     # === 第四區：規模量體設定 ===
@@ -163,7 +164,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         if enable_soil_limit:
             daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300)
 
-    # 樓層設定邏輯 (放在量體區)
+    # 樓層設定邏輯
     building_details_df = None
     max_floors_up = 1
     building_count = 1
@@ -205,7 +206,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # === 危評邏輯提示 (顯示在下方，因為依賴樓層變數) ===
+    # === 危評邏輯提示 ===
     risk_reasons = []
     suggested_days = 0
     if display_max_floor >= 16:
@@ -228,14 +229,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         else:
             st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br>已加入 <b>{manual_review_days_input} 天</b>。</div>""", unsafe_allow_html=True)
 
-    # === 第五區：外觀與機電裝修 ===
-    st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
-    f1, f2 = st.columns(2)
-    with f1:
-        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
-    with f2:
-        scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
-
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
     date_col1, date_col2 = st.columns([1, 2])
@@ -249,7 +242,7 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
-# --- 5. 核心運算邏輯 (維持不變，僅變數對應) ---
+# --- 5. 核心運算邏輯 ---
 base_area_factor = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 vol_factor = 1.0
 if total_fa_ping > 3000:
@@ -267,7 +260,17 @@ k_usage = k_usage_base * multi_building_factor
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
-excav_multiplier = excavation_map.get(excavation_system, 1.0) # Using map from previous selectbox logic
+# [FIX] Define excavation_map explicitly here to avoid NameError
+excavation_map = {
+    "連續壁 + 型鋼內支撐 (標準)": 1.0, 
+    "連續壁 + 地錨 (開挖動線佳)": 0.9,
+    "連續壁 + 結構樓板支撐 (逆打標準)": 1.0, 
+    "全套管切削樁 + 型鋼內支撐": 0.95, 
+    "預壘樁/排樁 + 型鋼內支撐": 0.85,
+    "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, 
+    "放坡開挖/無支撐 (極快)": 0.5
+}
+excav_multiplier = excavation_map.get(excavation_system, 1.0)
 
 aux_wall_factor = 0
 if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20
@@ -282,7 +285,7 @@ else:
 add_review_days = manual_review_days_input if enable_manual_review else 0
 d_prep = d_prep_base + add_review_days
 
-# Demo Logic v6.33
+# Demo Logic
 d_demo = 0
 demo_note = ""
 d_dw_setup = 0 
