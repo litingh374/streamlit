@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.27", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.28", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -63,7 +63,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
     
     with col2:
-        # [Key Update v6.27] Renamed Foundation Options
         foundation_type = st.selectbox("基礎型式", [
             "標準筏式基礎 (無基樁)",
             "筏式基礎 + 一般鑽掘/預力樁",
@@ -286,7 +285,6 @@ else:
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
-# [Key Update Logic v6.27] Foundation Logic Update
 foundation_add = 0
 if "全套管" in foundation_type: foundation_add = 90
 elif "壁樁" in foundation_type: foundation_add = 80
@@ -306,7 +304,12 @@ elif "全套管" in excavation_system: base_retain = 50
 elif "預壘樁" in excavation_system: base_retain = 40
 elif "鋼板樁" in excavation_system: base_retain = 25
 
-d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days) * area_multiplier)
+# [Key Update v6.28] Top-Down Plunge Columns
+d_plunge_col = 0
+if "逆打" in b_method:
+    d_plunge_col = int(45 * area_multiplier) # Add 45 days scaled by area for King Posts
+
+d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col) * area_multiplier)
 
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
@@ -327,6 +330,7 @@ else:
     d_strut_install = d_excav_phase
     d_earth_work = d_excav_phase
 
+# Underground Structure Logic
 days_per_floor_bd = 38
 days_per_strut_remove = 10
 
@@ -335,10 +339,16 @@ if "放坡" in excavation_system or "無支撐" in excavation_system or "逆打"
 else:
     d_strut_removal = floors_down * days_per_strut_remove
 
-d_struct_below_raw = (floors_down * days_per_floor_bd) + d_strut_removal + foundation_add
+# [Key Update v6.28] Top-down structure efficiency
+struct_efficiency_factor = 1.0
+if "逆打" in b_method:
+    struct_efficiency_factor = 1.2 # Top-down is slower for structure
+
+d_struct_below_raw = ((floors_down * days_per_floor_bd * struct_efficiency_factor) + d_strut_removal + foundation_add)
 d_struct_below = int(d_struct_below_raw * area_multiplier)
 
 if d_strut_removal > 0: struct_note_base = f"38天/層 + 拆撐{days_per_strut_remove}天"
+elif "逆打" in b_method: struct_note_base = f"38天/層 x 1.2(逆打係數)"
 else: struct_note_base = f"38天/層"
 
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 25) * area_multiplier * k_usage)
@@ -467,8 +477,8 @@ with res_col4:
 st.subheader("📅 詳細工項進度建議表")
 excav_str_display = f"工法:{excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
-if d_dw_setup > 0:
-    excav_str_display += "\n(含導溝/鋪面/沉澱池)"
+if d_dw_setup > 0: excav_str_display += "\n(含導溝/鋪面/沉澱池)"
+if d_plunge_col > 0: excav_str_display += f"\n(含逆打鋼柱)"
 
 if add_review_days > 0:
     prep_note = f"含危評審查 (+{add_review_days}天)"
