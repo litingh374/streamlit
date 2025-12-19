@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.22", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.23", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -176,27 +176,21 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [New Feature Updated] 危評/外審 明確提示
+    # 危評/外審
     risk_review_msg = []
     add_review_days = 0
-    
-    # 邏輯 A: 結構外審 (通常 50m 以上) -> 約 16F
     if display_max_floor >= 16:
         risk_review_msg.append("📏 地上層數達 16F+ (建物高度約 50m 以上，需結構外審)")
         add_review_days = 90
-        
-    # 邏輯 B: 丁類危評 (通常 80m 以上) -> 約 25F
     if display_max_floor >= 25:
         risk_review_msg.append("🏗️ 地上層數達 25F+ (建物高度約 80m 以上，需丁類危評)")
-        add_review_days = 120 # 若同時滿足外審與危評，直接加 120 天
-    
-    # 邏輯 C: 丁類危評 (開挖 15m 以上) -> 約 B4
+        add_review_days = 120 
     if floors_down >= 4:
         risk_review_msg.append("⛏️ 地下層數達 B4+ (開挖深度約 15m 以上，需丁類危評)")
-        if add_review_days < 120: # 確保不重複疊加過多
+        if add_review_days < 120:
             add_review_days = max(add_review_days, 60)
             if add_review_days == 90 and "結構外審" in str(risk_review_msg):
-                 add_review_days = 120 # 外審+危評
+                 add_review_days = 120
 
     if risk_review_msg:
         msg_str = "<br>".join([f"• {m}" for m in risk_review_msg])
@@ -256,7 +250,6 @@ if "自訂" in prep_type_select and prep_days_custom is not None:
 else:
     d_prep_base = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
 
-# [Key Update] 將危評天數加入前置作業
 d_prep = d_prep_base + add_review_days
 
 if "純空地" in site_condition: d_demo = 0; demo_note = "純空地"
@@ -301,8 +294,27 @@ else:
     d_strut_install = d_excav_phase
     d_earth_work = d_excav_phase
 
-d_struct_below = int(((floors_down * 35) + foundation_add) * area_multiplier)
-d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 14) * area_multiplier * k_usage)
+# [Key Update Logic v6.23] 地下結構: 38天/層 + 拆撐 10天/層 (順打)
+days_per_floor_bd = 38
+days_per_strut_remove = 10
+
+# 計算拆撐時間 (僅順打且有支撐時計算)
+if "放坡" in excavation_system or "無支撐" in excavation_system or "逆打" in b_method:
+    d_strut_removal = 0
+else:
+    # 順打+有支撐，每層皆需拆撐 (保守估計)
+    d_strut_removal = floors_down * days_per_strut_remove
+
+d_struct_below_raw = (floors_down * days_per_floor_bd) + d_strut_removal + foundation_add
+d_struct_below = int(d_struct_below_raw * area_multiplier)
+
+# 更新備註文字
+if d_strut_removal > 0:
+    struct_note_base = f"38天/層 + 拆撐{days_per_strut_remove}天"
+else:
+    struct_note_base = f"38天/層"
+
+d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 25) * area_multiplier * k_usage)
 d_ext_wall = int(calc_floors_struct * 12 * area_multiplier * ext_wall_multiplier * k_usage)
 
 if "機電管線工程" in scope_options:
@@ -367,14 +379,14 @@ if "逆打" in b_method or "雙順打" in b_method:
     
     lag_1f_slab = int(60 * area_multiplier)
     p8_s = get_end_date(p6_s, lag_1f_slab) 
-    struct_note_below = f"併行 ({struct_below})"
+    struct_note_below = f"併行 ({struct_note_base})"
     struct_note_above = f"併行 ({display_max_floor}F+{display_max_roof}R)"
 else:
     p7_s = p_excav_finish + timedelta(days=1)
     p7_e = get_end_date(p7_s, d_struct_below)
     
     p8_s = p7_e + timedelta(days=1)
-    struct_note_below = f"要徑 ({struct_below})"
+    struct_note_below = f"要徑 ({struct_note_base})"
     struct_note_above = f"順打 ({display_max_floor}F+{display_max_roof}R)"
 
 p8_e = get_end_date(p8_s, d_struct_body)
