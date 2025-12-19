@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.26", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.27", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -63,7 +63,16 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
     
     with col2:
-        foundation_type = st.selectbox("基礎型式", ["筏式基礎 (標準)", "樁基礎 (一般)", "全套管基樁 (工期長)", "壁樁 (Barrette)", "微型樁 (工期短)", "獨立基腳"])
+        # [Key Update v6.27] Renamed Foundation Options
+        foundation_type = st.selectbox("基礎型式", [
+            "標準筏式基礎 (無基樁)",
+            "筏式基礎 + 一般鑽掘/預力樁",
+            "筏式基礎 + 全套管基樁 (工期長)",
+            "筏式基礎 + 壁樁 (Barrette)",
+            "筏式基礎 + 微型樁 (工期短)",
+            "獨立基腳 (無地下室)"
+        ])
+        
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
         excavation_system = st.selectbox("開挖擋土系統", [
             "連續壁 + 型鋼內支撐 (標準)",
@@ -277,22 +286,21 @@ else:
 
 d_soil = int((30 if "局部" in soil_improvement else 60 if "全區" in soil_improvement else 0) * area_multiplier)
 
+# [Key Update Logic v6.27] Foundation Logic Update
 foundation_add = 0
 if "全套管" in foundation_type: foundation_add = 90
 elif "壁樁" in foundation_type: foundation_add = 80
-elif "樁基礎" in foundation_type: foundation_add = 60
+elif "一般鑽掘" in foundation_type: foundation_add = 60
 elif "微型樁" in foundation_type: foundation_add = 30
 
 sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor) 
 
-# [Key Update v6.26] Diaphragm Wall Setup
-base_retain = 10 # Default
-d_dw_setup = 0 # Default setup time
+base_retain = 10 
+d_dw_setup = 0 
 
 if "連續壁" in excavation_system: 
     base_retain = 60
-    # 假設工程時間 (導溝/鋪面/沉澱池) - 約 14 天 x 規模係數
     d_dw_setup = int(14 * area_multiplier)
 elif "全套管" in excavation_system: base_retain = 50
 elif "預壘樁" in excavation_system: base_retain = 40
@@ -459,7 +467,6 @@ with res_col4:
 st.subheader("📅 詳細工項進度建議表")
 excav_str_display = f"工法:{excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
-# [New Display Update]
 if d_dw_setup > 0:
     excav_str_display += "\n(含導溝/鋪面/沉澱池)"
 
