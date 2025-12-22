@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.41", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.42", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -42,7 +42,6 @@ st.markdown("""
         font-size: 18px; font-weight: bold; color: #2D2926; 
         border-bottom: 2px solid #FFB81C; padding-bottom: 5px; margin-bottom: 15px; margin-top: 20px;
     }
-    /* Advanced Section Styling - Darker headers for the yellow background */
     .adv-header {
         color: #856404; font-weight: bold; font-size: 16px; margin-bottom: 10px; border-bottom: 1px solid #ffeeba; padding-bottom: 5px;
     }
@@ -201,47 +200,46 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Key Update v6.41] Distinct Color & Layout for Advanced Section
+    # [Key Update v6.42] Advanced Section Refined
     manual_height_m = 0.0
     manual_excav_depth_m = 0.0
     manual_dw_length_m = 0.0
     manual_retain_days = 0
     manual_crane_days = 0
     
-    with st.expander("🔧 進階：手動輸入詳細工程數據 (選填)", expanded=False):
-        # Use st.warning for distinct Yellow Background
+    with st.expander("🔧 進階：詳細數據與廠商工期覆蓋 (點擊展開)", expanded=False):
+        # Yellow background for advanced section
         with st.warning(""):
             st.markdown("<div class='adv-header'>📐 1. 物理量精算 (系統依此數據優化估算)</div>", unsafe_allow_html=True)
             
-            # Row 1: Height
-            st.markdown("**建物高度資訊**")
+            # 1. Height (Independent Row)
             col_h1, col_h2 = st.columns([1, 2])
             with col_h1:
                 manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評")
             
-            # Row 2: DW Dimensions (User Requested Layout)
-            st.markdown("**連續壁/開挖尺寸資訊**")
+            # 2. DW Dimensions (User Requested: Length/Width/Depth)
+            st.markdown("**連續壁與開挖規格 (圖面數據)**")
             adv_c1, adv_c2, adv_c3 = st.columns(3)
             with adv_c1:
-                site_L = st.number_input("基地長度 (m)", min_value=0.0, step=1.0)
+                dw_L = st.number_input("連續壁-圍塑長度 (m)", min_value=0.0, step=1.0)
             with adv_c2:
-                site_W = st.number_input("基地寬度 (m)", min_value=0.0, step=1.0)
+                dw_W = st.number_input("連續壁-圍塑寬度 (m)", min_value=0.0, step=1.0)
             with adv_c3:
-                manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1, help="影響土方量與危評")
+                manual_excav_depth_m = st.number_input("連續壁-開挖深度 (m)", min_value=0.0, step=0.1, help="連動土方計算與危評")
             
             # Auto Calc Display
             calc_dw_perimeter = 0.0
-            if site_L > 0 and site_W > 0:
-                calc_dw_perimeter = (site_L + site_W) * 2
-                st.caption(f"👉 自動計算周長: **{calc_dw_perimeter} m**")
+            if dw_L > 0 and dw_W > 0:
+                calc_dw_perimeter = (dw_L + dw_W) * 2
+                st.caption(f"👉 自動計算連續壁周長: **{calc_dw_perimeter} m**")
             
-            # Row 3: Total DW Length (Modifiable)
+            # 3. Total DW Length (Auto-filled but editable)
             manual_dw_length_m = st.number_input(
                 "連續壁總長度 (m)", 
                 min_value=0.0, 
                 value=calc_dw_perimeter, 
                 step=1.0, 
-                help="預設為 (長+寬)x2，若為不規則形狀請直接修正此數值"
+                help="預設為 (長+寬)x2，若基地為不規則形狀請直接修正此數值"
             )
 
             st.markdown("---")
@@ -262,7 +260,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         risk_reasons.append(f"📏 建物高度達 {check_height:.1f}m (≥50m 需結構外審)")
         suggested_days = 90
     if check_height >= 80:
-        risk_reasons.append(f"🏗️ 建物高度達 {check_height:.1f}m (≥80m 需丁類危評)")
+        risk_reasons.append(f"🏗 建物高度達 {check_height:.1f}m (≥80m 需丁類危評)")
         suggested_days = 120
     if check_depth >= 15:
         risk_reasons.append(f"⛏️ 開挖深度達 {check_depth:.1f}m (≥15m 需丁類危評)")
@@ -414,13 +412,12 @@ d_plunge_col = 0
 if "逆打" in b_method:
     d_plunge_col = int(45 * area_multiplier) 
 
-# [Manual Override Logic v6.39]
+# [Manual Override Logic]
 if manual_retain_days > 0:
     d_retain_work = manual_retain_days
     dw_note = "依廠商預估"
     setup_note = "手動覆蓋"
 else:
-    # Standard logic
     if manual_dw_length_m > 0 and "連續壁" in excavation_system:
          d_retain_work = int(base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col)
     else:
