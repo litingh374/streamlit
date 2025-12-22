@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.49", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.50", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -68,11 +68,13 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         obstruction_method = "一般怪手破除"
         backfill_method = "回填舊地下室 (標準)"
         deep_gw_seq = "無"
+        obs_strategy = "無" # Initialize variable
         
         if is_deep_demo:
             st.caption("⬇️ **舊地下室處理策略**")
             backfill_method = st.radio("施工平台建置", ["回填舊地下室 (標準)", "不回填 (架設施工構台)"], horizontal=True)
             obstruction_method = st.selectbox("地中障礙清障方式", ["一般怪手破除", "深導溝 (Deep Guide Wall)", "全套管切削 (All-Casing)"])
+            obs_strategy = obstruction_method # Assign for export
             
             if obstruction_method == "深導溝 (Deep Guide Wall)":
                 deep_gw_seq = st.selectbox("深導溝施作順序", ["先回填後施作 (標準)", "邊回填邊施作 (重疊)"])
@@ -135,9 +137,9 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     with g3:
         st.write("") 
 
-    # === 4. 規模量體設定 ===
+    # === 4. 規模量體設定 (修改版面：只留面積) ===
     st.markdown("<div class='section-header'>4. 規模量體設定</div>", unsafe_allow_html=True)
-    dim_c1, dim_c2, dim_c3 = st.columns(3)
+    dim_c1, dim_c2 = st.columns(2)
     
     with dim_c1:
         base_area_m2 = st.number_input("基地面積 (m²)", min_value=0.0, value=1652.89, step=10.0)
@@ -150,20 +152,18 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         total_fa_ping = total_fa_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{total_fa_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
-    with dim_c3:
-        floors_down = st.number_input("地下層數 (B)", min_value=0, value=3)
-        enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False)
-        daily_soil_limit = None
-        if enable_soil_limit:
-            daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300)
-
-    # 樓層設定 (計算 display_max_floor 用)
+    # --- 樓層與地下室設定 (整合在此) ---
     building_details_df = None
     max_floors_up = 1
     building_count = 1
     calc_floors_struct = 1
     display_max_floor = 1
     display_max_roof = 0
+    
+    # 預設值初始化
+    floors_down = 3
+    enable_soil_limit = False
+    daily_soil_limit = 300
 
     if "集合住宅" in b_type:
         st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置")
@@ -175,6 +175,14 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 {"棟別名稱": "C棟", "地上層數": 12, "屋突層數": 1}
             ])
             edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=False, key="building_editor", height=150)
+            
+            # 因為集合住宅通常共用地下室，將地下室設定放在這裡
+            st.markdown("---")
+            floors_down = st.number_input("地下層數 (B)", min_value=0, value=3, key="fd_multi")
+            enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_multi")
+            if enable_soil_limit:
+                daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300, key="dl_multi")
+
         with t_col2:
             if not edited_df.empty:
                 edited_df["結構總層"] = edited_df["地上層數"] + edited_df["屋突層數"]
@@ -190,16 +198,32 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 st.error("⚠️ 請至少輸入一棟資料")
                 calc_floors_struct = 15
     else:
-        st.markdown("##### 🏢 地上層數設定")
+        # === 單棟模式：這裡是你要求修改的排版 ===
+        st.markdown("##### 🏢 層數設定")
+        # 修改為 3 欄並排
         s_col1, s_col2, s_col3 = st.columns(3) 
-        with s_col1: floors_up = st.number_input("地上層數 (F)", min_value=1, value=12)
-        with s_col2: floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2)
+        
+        with s_col1: 
+            floors_up = st.number_input("地上層數 (F)", min_value=1, value=12, key="fu_single")
+        
+        with s_col2: 
+            floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, key="fr_single")
+            
+        with s_col3: 
+            # 將地下層數移到這裡
+            floors_down = st.number_input("地下層數 (B)", min_value=0, value=3, key="fd_single")
+            
+            # 將土方管制選項移到這裡
+            enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_single")
+            if enable_soil_limit:
+                daily_soil_limit = st.number_input("每日限出土 (m³)", min_value=10, value=300, key="dl_single")
+
         calc_floors_struct = floors_up + floors_roof
         display_max_floor = floors_up
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Key Update v6.49] Integrated Height/Depth Input in Section 4
+    # [Key Update] Integrated Height/Depth Input
     st.markdown("##### 📏 建物高度與開挖深度 (選填)")
     dim_c4, dim_c5 = st.columns(2)
     with dim_c4:
@@ -240,7 +264,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
 risk_reasons = []
 suggested_days = 0
 
-# [Logic Update v6.49] Use manual values if present
+# [Logic Update] Use manual values if present
 check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
 check_depth = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
 
