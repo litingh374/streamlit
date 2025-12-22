@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.42", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.43", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -24,19 +24,6 @@ st.markdown("""
         background-color: #f8f9fa; padding: 15px; border-radius: 10px;
         border-left: 8px solid var(--main-yellow);
         box-shadow: 2px 2px 8px rgba(0,0,0,0.05); margin-bottom: 15px; text-align: center;
-    }
-    .area-display {
-        background-color: #e3f2fd; padding: 5px 10px; border-radius: 5px;
-        font-size: 14px; color: #1565c0; margin-top: -10px; margin-bottom: 10px;
-        border-left: 3px solid #1565c0;
-    }
-    .warning-box {
-        background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; 
-        border-left: 6px solid #ffeeba; margin-top: 15px; font-size: 15px; line-height: 1.6;
-    }
-    .info-box {
-        background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; 
-        border-left: 6px solid #c3e6cb; margin-top: 15px; font-size: 15px; line-height: 1.6;
     }
     .section-header {
         font-size: 18px; font-weight: bold; color: #2D2926; 
@@ -120,7 +107,19 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
                 "鋼板樁 + 型鋼內支撐 (淺開挖)", "放坡開挖/無支撐 (極快)"
             ]
             help_text = "請選擇擋土支撐方式"
+        
         excavation_system = st.selectbox("開挖擋土系統", excav_options, help=help_text)
+        
+        # [Fix NameError] Define Map IMMEDIATELY here
+        excavation_map = {
+            "連續壁 + 型鋼內支撐 (標準)": 1.0, 
+            "連續壁 + 地錨 (開挖動線佳)": 0.9,
+            "連續壁 + 結構樓板支撐 (逆打標準)": 1.0, 
+            "全套管切削樁 + 型鋼內支撐": 0.95, 
+            "預壘樁/排樁 + 型鋼內支撐": 0.85,
+            "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, 
+            "放坡開挖/無支撐 (極快)": 0.5
+        }
         
         rw_aux_options = []
         if "連續壁" in excavation_system:
@@ -200,7 +199,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Key Update v6.42] Advanced Section Refined
+    # [Key Update v6.43] Advanced Section: Fixed Layout & Yellow Color
     manual_height_m = 0.0
     manual_excav_depth_m = 0.0
     manual_dw_length_m = 0.0
@@ -208,17 +207,11 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     manual_crane_days = 0
     
     with st.expander("🔧 進階：詳細數據與廠商工期覆蓋 (點擊展開)", expanded=False):
-        # Yellow background for advanced section
-        with st.warning(""):
-            st.markdown("<div class='adv-header'>📐 1. 物理量精算 (系統依此數據優化估算)</div>", unsafe_allow_html=True)
+        with st.warning(""): # Yellow Background
+            st.markdown("<div class='adv-header'>📐 1. 物理量精算 (圖面數據)</div>", unsafe_allow_html=True)
             
-            # 1. Height (Independent Row)
-            col_h1, col_h2 = st.columns([1, 2])
-            with col_h1:
-                manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評")
-            
-            # 2. DW Dimensions (User Requested: Length/Width/Depth)
-            st.markdown("**連續壁與開挖規格 (圖面數據)**")
+            # Row 1: Length / Width / Depth (Requested by user)
+            st.markdown("**連續壁/開挖規格**")
             adv_c1, adv_c2, adv_c3 = st.columns(3)
             with adv_c1:
                 dw_L = st.number_input("連續壁-圍塑長度 (m)", min_value=0.0, step=1.0)
@@ -227,28 +220,31 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             with adv_c3:
                 manual_excav_depth_m = st.number_input("連續壁-開挖深度 (m)", min_value=0.0, step=0.1, help="連動土方計算與危評")
             
-            # Auto Calc Display
+            # Row 2: Calculated Perimeter + Height
+            st.markdown("**總長度與高度**")
             calc_dw_perimeter = 0.0
             if dw_L > 0 and dw_W > 0:
                 calc_dw_perimeter = (dw_L + dw_W) * 2
-                st.caption(f"👉 自動計算連續壁周長: **{calc_dw_perimeter} m**")
             
-            # 3. Total DW Length (Auto-filled but editable)
-            manual_dw_length_m = st.number_input(
-                "連續壁總長度 (m)", 
-                min_value=0.0, 
-                value=calc_dw_perimeter, 
-                step=1.0, 
-                help="預設為 (長+寬)x2，若基地為不規則形狀請直接修正此數值"
-            )
+            adv_c4, adv_c5 = st.columns([1, 1])
+            with adv_c4:
+                manual_dw_length_m = st.number_input(
+                    "連續壁總長度 (m)", 
+                    min_value=0.0, 
+                    value=calc_dw_perimeter, 
+                    step=1.0, 
+                    help="預設為 (長+寬)x2"
+                )
+            with adv_c5:
+                manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評")
 
-            st.markdown("---")
+            st.divider()
             st.markdown("<div class='adv-header'>👷 2. 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
             over_c1, over_c2 = st.columns(2)
             with over_c1:
-                manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
+                manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期")
             with over_c2:
-                manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
+                manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期")
 
     # 危評邏輯
     risk_reasons = []
@@ -315,15 +311,6 @@ k_usage = k_usage_base * multi_building_factor
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
-excavation_map = {
-    "連續壁 + 型鋼內支撐 (標準)": 1.0, 
-    "連續壁 + 地錨 (開挖動線佳)": 0.9,
-    "連續壁 + 結構樓板支撐 (逆打標準)": 1.0, 
-    "全套管切削樁 + 型鋼內支撐": 0.95, 
-    "預壘樁/排樁 + 型鋼內支撐": 0.85,
-    "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, 
-    "放坡開挖/無支撐 (極快)": 0.5
-}
 excav_multiplier = excavation_map.get(excavation_system, 1.0)
 
 aux_wall_factor = 0
