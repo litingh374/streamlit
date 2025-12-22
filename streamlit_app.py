@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.43", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.44", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -45,7 +45,7 @@ project_name = st.text_input("📝 請輸入專案名稱", value="未命名專�
 st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
-    # === 第一區：核心構造與工法 ===
+    # === 1. 核心構造與工法 ===
     st.markdown("<div class='section-header'>1. 核心構造與工法</div>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -57,7 +57,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     with c4:
         struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
 
-    # === 第二區：基地現況與前置 ===
+    # === 2. 基地現況與前置 ===
     st.markdown("<div class='section-header'>2. 基地現況與前置作業</div>", unsafe_allow_html=True)
     s1, s2, s3 = st.columns(3)
     
@@ -92,7 +92,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         if enable_manual_review:
             manual_review_days_input = st.number_input("輸入緩衝天數", min_value=0, value=90, step=30, label_visibility="collapsed")
 
-    # === 第三區：大地與基礎工程 ===
+    # === 3. 大地與基礎工程 ===
     st.markdown("<div class='section-header'>3. 大地工程與基礎</div>", unsafe_allow_html=True)
     g1, g2, g3 = st.columns(3)
     
@@ -110,7 +110,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         
         excavation_system = st.selectbox("開挖擋土系統", excav_options, help=help_text)
         
-        # [Fix NameError] Define Map IMMEDIATELY here
+        # Define Map immediately to fix logic flow
         excavation_map = {
             "連續壁 + 型鋼內支撐 (標準)": 1.0, 
             "連續壁 + 地錨 (開挖動線佳)": 0.9,
@@ -135,7 +135,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     with g3:
         st.write("") 
 
-    # === 第四區：規模量體設定 ===
+    # === 4. 規模量體設定 ===
     st.markdown("<div class='section-header'>4. 規模量體設定</div>", unsafe_allow_html=True)
     dim_c1, dim_c2, dim_c3 = st.columns(3)
     
@@ -199,52 +199,64 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Key Update v6.43] Advanced Section: Fixed Layout & Yellow Color
+    # === 5. 外觀與機電裝修 ===
+    st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
+    f1, f2 = st.columns(2)
+    with f1:
+        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
+    with f2:
+        scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
+
+    # === 6. 進階：詳細數據與廠商工期覆蓋 (Independent Section Moved Here) ===
+    st.markdown("<div class='section-header'>6. 進階：詳細數據與廠商工期覆蓋</div>", unsafe_allow_html=True)
+    
     manual_height_m = 0.0
     manual_excav_depth_m = 0.0
     manual_dw_length_m = 0.0
     manual_retain_days = 0
     manual_crane_days = 0
     
-    with st.expander("🔧 進階：詳細數據與廠商工期覆蓋 (點擊展開)", expanded=False):
-        with st.warning(""): # Yellow Background
-            st.markdown("<div class='adv-header'>📐 1. 物理量精算 (圖面數據)</div>", unsafe_allow_html=True)
-            
-            # Row 1: Length / Width / Depth (Requested by user)
-            st.markdown("**連續壁/開挖規格**")
-            adv_c1, adv_c2, adv_c3 = st.columns(3)
-            with adv_c1:
-                dw_L = st.number_input("連續壁-圍塑長度 (m)", min_value=0.0, step=1.0)
-            with adv_c2:
-                dw_W = st.number_input("連續壁-圍塑寬度 (m)", min_value=0.0, step=1.0)
-            with adv_c3:
-                manual_excav_depth_m = st.number_input("連續壁-開挖深度 (m)", min_value=0.0, step=0.1, help="連動土方計算與危評")
-            
-            # Row 2: Calculated Perimeter + Height
-            st.markdown("**總長度與高度**")
-            calc_dw_perimeter = 0.0
-            if dw_L > 0 and dw_W > 0:
-                calc_dw_perimeter = (dw_L + dw_W) * 2
-            
-            adv_c4, adv_c5 = st.columns([1, 1])
-            with adv_c4:
-                manual_dw_length_m = st.number_input(
-                    "連續壁總長度 (m)", 
-                    min_value=0.0, 
-                    value=calc_dw_perimeter, 
-                    step=1.0, 
-                    help="預設為 (長+寬)x2"
-                )
-            with adv_c5:
-                manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評")
+    # Use st.warning to create the distinctive yellow block
+    with st.warning(""): 
+        st.markdown("<div class='adv-header'>📐 1. 物理量精算 (圖面數據)</div>", unsafe_allow_html=True)
+        
+        # Row 1: Height (Independent)
+        col_h1, col_h2 = st.columns([1, 2])
+        with col_h1:
+            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評判定")
+        
+        # Row 2: DW Dimensions (Calculated)
+        st.markdown("**連續壁與開挖規格**")
+        adv_c1, adv_c2, adv_c3 = st.columns(3)
+        with adv_c1:
+            dw_L = st.number_input("連續壁-圍塑長度 (m)", min_value=0.0, step=1.0)
+        with adv_c2:
+            dw_W = st.number_input("連續壁-圍塑寬度 (m)", min_value=0.0, step=1.0)
+        with adv_c3:
+            manual_excav_depth_m = st.number_input("連續壁-開挖深度 (m)", min_value=0.0, step=0.1, help="精準連動土方計算與危評")
+        
+        # Auto Calc Logic
+        calc_dw_perimeter = 0.0
+        if dw_L > 0 and dw_W > 0:
+            calc_dw_perimeter = (dw_L + dw_W) * 2
+            st.caption(f"👉 自動計算連續壁周長: **{calc_dw_perimeter} m**")
+        
+        # Row 3: Total DW Length (Auto-filled)
+        manual_dw_length_m = st.number_input(
+            "連續壁總長度 (m)", 
+            min_value=0.0, 
+            value=calc_dw_perimeter, 
+            step=1.0, 
+            help="預設為 (長+寬)x2，不規則形狀可直接修改此值"
+        )
 
-            st.divider()
-            st.markdown("<div class='adv-header'>👷 2. 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
-            over_c1, over_c2 = st.columns(2)
-            with over_c1:
-                manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期")
-            with over_c2:
-                manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期")
+        st.divider()
+        st.markdown("<div class='adv-header'>👷 2. 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
+        over_c1, over_c2 = st.columns(2)
+        with over_c1:
+            manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期，輸入後將覆蓋系統計算")
+        with over_c2:
+            manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期，輸入後將強制開啟並覆蓋")
 
     # 危評邏輯
     risk_reasons = []
@@ -271,14 +283,6 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
             st.markdown(f"""<div class='warning-box'><b>⚠️ 系統建議：</b>偵測到本案符合以下條件：<br>{reasons_str}<br><hr style="margin:5px 0; border-top:1px dashed #bba55a;">建議至「2. 基地現況」區塊勾選「納入危評/外審緩衝期」，預估需增加 <b>{suggested_days} 天</b>。</div>""", unsafe_allow_html=True)
         else:
             st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br>已加入 <b>{manual_review_days_input} 天</b>。</div>""", unsafe_allow_html=True)
-
-    # === 第五區：外觀與機電裝修 ===
-    st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
-    f1, f2 = st.columns(2)
-    with f1:
-        ext_wall = st.selectbox("外牆型式", ["標準磁磚/塗料", "石材吊掛 (工期較長)", "玻璃帷幕 (工期較短)", "預鑄PC板", "金屬三明治板 (極快)"])
-    with f2:
-        scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
 st.subheader("📅 日期與排除條件")
 with st.expander("點擊展開/隱藏 日期設定"):
