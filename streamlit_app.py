@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.48", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.49", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -157,7 +157,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         if enable_soil_limit:
             daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300)
 
-    # 樓層設定
+    # 樓層設定 (計算 display_max_floor 用)
     building_details_df = None
     max_floors_up = 1
     building_count = 1
@@ -199,6 +199,16 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
+    # [Key Update v6.49] Integrated Height/Depth Input in Section 4
+    st.markdown("##### 📏 建物高度與開挖深度 (選填)")
+    dim_c4, dim_c5 = st.columns(2)
+    with dim_c4:
+        est_h = display_max_floor * 3.3
+        manual_height_m = st.number_input(f"建物全高 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則依 [地上層x3.3m] 估算 (約 {est_h:.1f}m)。")
+    with dim_c5:
+        est_d = floors_down * 3.5
+        manual_excav_depth_m = st.number_input(f"地下開挖深度 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則依 [地下層x3.5m] 估算 (約 {est_d:.1f}m)。")
+
     # === 5. 外觀與機電裝修 ===
     st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
     f1, f2 = st.columns(2)
@@ -208,7 +218,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
 # ==========================================
-# [Key Update v6.48] Simplified Advanced Block
+# Advanced Block (Simplified)
 # ==========================================
 st.write("") # Spacer
 manual_retain_days = 0
@@ -229,8 +239,10 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
 # Risk Assessment Logic
 risk_reasons = []
 suggested_days = 0
-check_height = display_max_floor * 3.3
-check_depth = floors_down * 3.5
+
+# [Logic Update v6.49] Use manual values if present
+check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
+check_depth = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
 
 if check_height >= 50:
     risk_reasons.append(f"📏 建物高度達 {check_height:.1f}m (≥50m 需結構外審)")
@@ -273,7 +285,6 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-# [Key Update v6.48] SS = 10 days/floor (30 days/section of 3 floors)
 struct_map_above = {"RC造": 28, "SRC造": 25, "SS造": 10, "SC造": 21}
 
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
@@ -374,7 +385,9 @@ d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier)
 excav_note = "出土/支撐"
 
 if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
-    total_soil_m3 = base_area_m2 * (floors_down * 3.5) * 1.25
+    # Use real depth for calculation
+    depth_calc = check_depth
+    total_soil_m3 = base_area_m2 * depth_calc * 1.25
     d_excav_limited = math.ceil(total_soil_m3 / daily_soil_limit)
     d_excav_phase = max(d_excav_std, d_excav_limited)
     if d_excav_limited > d_excav_std:
