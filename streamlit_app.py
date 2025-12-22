@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.46", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.47", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -110,6 +110,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         
         excavation_system = st.selectbox("開挖擋土系統", excav_options, help=help_text)
         
+        # Define Map immediately to fix logic flow
         excavation_map = {
             "連續壁 + 型鋼內支撐 (標準)": 1.0, 
             "連續壁 + 地錨 (開挖動線佳)": 0.9,
@@ -156,7 +157,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         if enable_soil_limit:
             daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300)
 
-    # 樓層設定
+    # 樓層設定邏輯
     building_details_df = None
     max_floors_up = 1
     building_count = 1
@@ -207,7 +208,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
 # ==========================================
-# [Key Update v6.45] Independent Advanced Block (Fixed Layout)
+# [Key Update v6.47] Advanced Block Refined Layout
 # ==========================================
 st.write("") # Spacer
 manual_height_m = 0.0
@@ -221,12 +222,7 @@ with st.expander("🔧 進階：詳細物理量與廠商工期覆蓋 (選填/點
     with st.warning(""): 
         st.markdown("<div class='adv-header'>📐 1. 物理量精算 (圖面數據)</div>", unsafe_allow_html=True)
         
-        # Row 1: Building Height (Independent)
-        col_h1, col_h2 = st.columns([1, 3])
-        with col_h1:
-            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評判定")
-        
-        # Row 2: DW Dimensions (L, W, H)
+        # Row 1: The Requested 3 Fields + Building Height
         adv_c1, adv_c2, adv_c3, adv_c4 = st.columns(4)
         
         with adv_c1:
@@ -236,21 +232,28 @@ with st.expander("🔧 進階：詳細物理量與廠商工期覆蓋 (選填/點
         with adv_c3:
             # Depth maps to excavation depth for calculation
             manual_excav_depth_m = st.number_input("連續壁深(H)", min_value=0.0, step=0.1, help="開挖深度，連動土方量計算")
+        with adv_c4:
+            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審與危評判定")
         
         # Auto Calc Logic
         calc_dw_perimeter = 0.0
         if dw_L > 0 and dw_W > 0:
             calc_dw_perimeter = (dw_L + dw_W) * 2
         
-        with adv_c4:
-            # Total Length (Editable)
+        # Row 2: Total Length (Calculated)
+        st.markdown("")
+        col_calc_1, col_calc_2 = st.columns([1, 3])
+        with col_calc_1:
             manual_dw_length_m = st.number_input(
                 "連續壁總長度 (m)", 
                 min_value=0.0, 
                 value=calc_dw_perimeter, 
                 step=1.0, 
-                help="預設為 (L+W)x2，不規則形狀可手動修正"
+                help="預設為 (L+W)x2"
             )
+        with col_calc_2:
+            if calc_dw_perimeter > 0:
+                st.info(f"💡 系統已自動計算周長: **{calc_dw_perimeter} m**")
 
         st.divider()
         st.markdown("<div class='adv-header'>👷 2. 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
