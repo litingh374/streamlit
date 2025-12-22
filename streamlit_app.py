@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.47", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.48", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -110,7 +110,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         
         excavation_system = st.selectbox("開挖擋土系統", excav_options, help=help_text)
         
-        # Define Map immediately to fix logic flow
+        # Define Map immediately
         excavation_map = {
             "連續壁 + 型鋼內支撐 (標準)": 1.0, 
             "連續壁 + 地錨 (開挖動線佳)": 0.9,
@@ -157,7 +157,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         if enable_soil_limit:
             daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300)
 
-    # 樓層設定邏輯
+    # 樓層設定
     building_details_df = None
     max_floors_up = 1
     building_count = 1
@@ -208,55 +208,16 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
 # ==========================================
-# [Key Update v6.47] Advanced Block Refined Layout
+# [Key Update v6.48] Simplified Advanced Block
 # ==========================================
 st.write("") # Spacer
-manual_height_m = 0.0
-manual_excav_depth_m = 0.0
-manual_dw_length_m = 0.0
 manual_retain_days = 0
 manual_crane_days = 0
 
-with st.expander("🔧 進階：詳細物理量與廠商工期覆蓋 (選填/點擊展開)", expanded=False):
+with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expanded=False):
     # Distinct Yellow Background
     with st.warning(""): 
-        st.markdown("<div class='adv-header'>📐 1. 物理量精算 (圖面數據)</div>", unsafe_allow_html=True)
-        
-        # Row 1: The Requested 3 Fields + Building Height
-        adv_c1, adv_c2, adv_c3, adv_c4 = st.columns(4)
-        
-        with adv_c1:
-            dw_L = st.number_input("連續壁長(L)", min_value=0.0, step=1.0)
-        with adv_c2:
-            dw_W = st.number_input("連續壁寬(W)", min_value=0.0, step=1.0)
-        with adv_c3:
-            # Depth maps to excavation depth for calculation
-            manual_excav_depth_m = st.number_input("連續壁深(H)", min_value=0.0, step=0.1, help="開挖深度，連動土方量計算")
-        with adv_c4:
-            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審與危評判定")
-        
-        # Auto Calc Logic
-        calc_dw_perimeter = 0.0
-        if dw_L > 0 and dw_W > 0:
-            calc_dw_perimeter = (dw_L + dw_W) * 2
-        
-        # Row 2: Total Length (Calculated)
-        st.markdown("")
-        col_calc_1, col_calc_2 = st.columns([1, 3])
-        with col_calc_1:
-            manual_dw_length_m = st.number_input(
-                "連續壁總長度 (m)", 
-                min_value=0.0, 
-                value=calc_dw_perimeter, 
-                step=1.0, 
-                help="預設為 (L+W)x2"
-            )
-        with col_calc_2:
-            if calc_dw_perimeter > 0:
-                st.info(f"💡 系統已自動計算周長: **{calc_dw_perimeter} m**")
-
-        st.divider()
-        st.markdown("<div class='adv-header'>👷 2. 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
+        st.markdown("<div class='adv-header'>👷 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
         over_c1, over_c2 = st.columns(2)
         with over_c1:
             manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期，輸入後將覆蓋系統計算")
@@ -268,8 +229,8 @@ with st.expander("🔧 進階：詳細物理量與廠商工期覆蓋 (選填/點
 # Risk Assessment Logic
 risk_reasons = []
 suggested_days = 0
-check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
-check_depth = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
+check_height = display_max_floor * 3.3
+check_depth = floors_down * 3.5
 
 if check_height >= 50:
     risk_reasons.append(f"📏 建物高度達 {check_height:.1f}m (≥50m 需結構外審)")
@@ -312,7 +273,8 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-struct_map_above = {"RC造": 28, "SRC造": 25, "SS造": 7, "SC造": 21}
+# [Key Update v6.48] SS = 10 days/floor (30 days/section of 3 floors)
+struct_map_above = {"RC造": 28, "SRC造": 25, "SS造": 10, "SC造": 21}
 
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 multi_building_factor = 1.0
@@ -388,17 +350,7 @@ d_aux_wall_days = int(60 * aux_wall_factor)
 base_retain = 10 
 dw_note = ""
 if "連續壁" in excavation_system: 
-    if manual_dw_length_m > 0:
-        n_machines = 1
-        if base_area_ping > 1000: n_machines = 3
-        elif base_area_ping > 500: n_machines = 2
-        n_panels = manual_dw_length_m / 6.0
-        calculated_days = (n_panels * 2.5) / n_machines
-        base_retain = int(calculated_days) + 5 
-        dw_note = f"依長度{manual_dw_length_m}m推算"
-    else:
-        base_retain = 60
-    
+    base_retain = 60
     if d_dw_setup == 0:
         d_dw_setup = int(14 * area_multiplier)
         setup_note = "標準導溝/鋪面"
@@ -416,22 +368,16 @@ if manual_retain_days > 0:
     dw_note = "依廠商預估"
     setup_note = "手動覆蓋"
 else:
-    if manual_dw_length_m > 0 and "連續壁" in excavation_system:
-         d_retain_work = int(base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col)
-    else:
-         d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
+    d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
 
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
 
 if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
-    depth_calc = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
-    total_soil_m3 = base_area_m2 * depth_calc * 1.25
+    total_soil_m3 = base_area_m2 * (floors_down * 3.5) * 1.25
     d_excav_limited = math.ceil(total_soil_m3 / daily_soil_limit)
     d_excav_phase = max(d_excav_std, d_excav_limited)
-    if manual_excav_depth_m > 0:
-        excav_note = f"精算深度{depth_calc}m (限{daily_soil_limit}m³)"
-    elif d_excav_limited > d_excav_std:
+    if d_excav_limited > d_excav_std:
         excav_note = f"受限每日{daily_soil_limit}m³"
 else:
     d_excav_phase = d_excav_std
@@ -664,6 +610,32 @@ sched_display_df = sched_display_df.sort_values(by="Start")
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
+
+# --- 8. 甘特圖 ---
+st.subheader("📊 專案進度甘特圖")
+if not sched_display_df.empty:
+    gantt_df = sched_display_df.copy()
+    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#696969", "#708090", "#A0522D", "#DC143C", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#556B2F", "#DAA520"]
+    fig = px.timeline(
+        gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
+        color_discrete_sequence=professional_colors, text="工項階段", 
+        title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
+        hover_data={"需用工作天": True, "備註": True}, height=600
+    )
+    fig.update_traces(
+        textposition='inside', insidetextanchor='start', width=0.5, 
+        marker_line_width=0, opacity=0.9, textfont=dict(size=16, family="Microsoft JhengHei")
+    )
+    fig.update_layout(
+        plot_bgcolor='white', font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), 
+        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), 
+        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), 
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("尚無工期資料，請檢查參數設定。")
 
 # --- 9. Excel 導出 ---
 st.divider()
