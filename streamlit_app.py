@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.37", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.38", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -197,7 +197,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Key Feature v6.37] Advanced Manual Input
+    # 進階數據
     manual_height_m = 0.0
     manual_excav_depth_m = 0.0
     manual_dw_length_m = 0.0
@@ -205,20 +205,14 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     with st.expander("🔧 進階：手動輸入詳細工程數據 (選填)", expanded=False):
         st.caption("💡 若輸入以下數據，系統將優先採用進行精確估算，否則將依樓層與面積進行概估。")
         adv_c1, adv_c2, adv_c3 = st.columns(3)
-        with adv_c1:
-            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響結構外審與危評判定")
-        with adv_c2:
-            manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1, help="影響土方量與危評判定")
-        with adv_c3:
-            manual_dw_length_m = st.number_input("連續壁總長度 (m)", min_value=0.0, step=1.0, help="影響連續壁施作天數")
+        with adv_c1: manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1)
+        with adv_c2: manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1)
+        with adv_c3: manual_dw_length_m = st.number_input("連續壁總長度 (m)", min_value=0.0, step=1.0)
 
-    # === 危評邏輯提示 (整合進階數據) ===
+    # 危評邏輯
     risk_reasons = []
     suggested_days = 0
-    
-    # 判斷高度：優先用手動輸入值，否則概估 (3.3m/層)
     check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
-    # 判斷深度：優先用手動輸入值，否則概估 (3.5m/層)
     check_depth = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
 
     if check_height >= 50:
@@ -270,7 +264,8 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-struct_map_above = {"RC造": 25, "SRC造": 25, "SS造": 7, "SC造": 21}
+# [Key Update v6.38] RC Structure Days = 28
+struct_map_above = {"RC造": 28, "SRC造": 25, "SS造": 7, "SC造": 21}
 
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 multi_building_factor = 1.0
@@ -353,20 +348,15 @@ sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor) 
 
 base_retain = 10 
-# [Key Update v6.37] Diaphragm Wall Precise Calculation
 dw_note = ""
 if "連續壁" in excavation_system: 
-    # Use manual length if provided
     if manual_dw_length_m > 0:
-        # Estimation: Standard panel ~6m. 1 machine ~2.5 days/panel.
-        # Assume 1 machine for small (<500ping), 2 for medium, 3 for large.
         n_machines = 1
         if base_area_ping > 1000: n_machines = 3
         elif base_area_ping > 500: n_machines = 2
-        
         n_panels = manual_dw_length_m / 6.0
         calculated_days = (n_panels * 2.5) / n_machines
-        base_retain = int(calculated_days) + 5 # +5 buffer
+        base_retain = int(calculated_days) + 5 
         dw_note = f"依長度{manual_dw_length_m}m推算"
     else:
         base_retain = 60
@@ -383,28 +373,19 @@ if "逆打" in b_method:
     d_plunge_col = int(45 * area_multiplier) 
 
 d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
-# Note: Base retain calculation above already factored scale if manual, if not manual, apply area_multiplier
 if manual_dw_length_m > 0 and "連續壁" in excavation_system:
-     # If manual, area_multiplier is already considered in machine count, don't double count excessively
-     # But keeping structure simple: let's treat calculated days as base and apply modest factor or 1.0
      d_retain_work = int(base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col)
 else:
      d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col) * area_multiplier)
 
-
-# [Key Update v6.37] Excavation Precise Calculation
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
 
-# Recalculate soil limit based on Manual Depth if provided
 if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
-    # Use manual depth if available, else estimate
     depth_calc = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
-    
     total_soil_m3 = base_area_m2 * depth_calc * 1.25
     d_excav_limited = math.ceil(total_soil_m3 / daily_soil_limit)
     d_excav_phase = max(d_excav_std, d_excav_limited)
-    
     if manual_excav_depth_m > 0:
         excav_note = f"精算深度{depth_calc}m (限{daily_soil_limit}m³)"
     elif d_excav_limited > d_excav_std:
@@ -442,8 +423,9 @@ if d_strut_removal > 0: struct_note_base = f"38天/層 + 拆撐{days_per_strut_r
 elif "逆打" in b_method: struct_note_base = f"38天/層 x 1.2(逆打係數)"
 else: struct_note_base = f"38天/層"
 
-d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 25) * area_multiplier * k_usage)
-d_ext_wall = int(calc_floors_struct * 12 * area_multiplier * ext_wall_multiplier * k_usage)
+# [Key Update v6.38] External Wall Base = 20
+d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 28) * area_multiplier * k_usage)
+d_ext_wall = int(calc_floors_struct * 20 * area_multiplier * ext_wall_multiplier * k_usage)
 
 if "機電管線工程" in scope_options:
     d_mep = int((60 + calc_floors_struct * 4) * area_multiplier * k_usage)
@@ -453,8 +435,9 @@ if "室內裝修工程" in scope_options:
     d_fit_out = int((60 + calc_floors_struct * 3) * area_multiplier * k_usage)
 else: d_fit_out = 0
 
+# [Key Update v6.38] Landscape = 75
 if "景觀工程" in scope_options:
-    d_landscape = int(45 * base_area_factor) 
+    d_landscape = int(75 * base_area_factor) 
 else: d_landscape = 0
 
 d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
@@ -469,9 +452,10 @@ needs_tower_crane = False
 if struct_above in ["SS造", "SC造", "SRC造"] or display_max_floor >= 15:
     needs_tower_crane = True
 
+# [Key Update v6.38] Tower Crane = 40
 d_tower_crane = 0
 if needs_tower_crane:
-    d_tower_crane = 20 
+    d_tower_crane = 40 
 
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
