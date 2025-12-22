@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.38", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.39", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -197,17 +197,29 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # 進階數據
+    # 進階數據 & 手動覆蓋 (v6.39 Update)
     manual_height_m = 0.0
     manual_excav_depth_m = 0.0
     manual_dw_length_m = 0.0
+    manual_retain_days = 0
+    manual_crane_days = 0
     
     with st.expander("🔧 進階：手動輸入詳細工程數據 (選填)", expanded=False):
-        st.caption("💡 若輸入以下數據，系統將優先採用進行精確估算，否則將依樓層與面積進行概估。")
+        st.caption("💡 上方為物理量參數 (精算用)，下方為廠商報價工期 (強制覆蓋用)。")
+        
+        # 物理量
         adv_c1, adv_c2, adv_c3 = st.columns(3)
         with adv_c1: manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1)
         with adv_c2: manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1)
         with adv_c3: manual_dw_length_m = st.number_input("連續壁總長度 (m)", min_value=0.0, step=1.0)
+        
+        st.divider()
+        # 廠商工期覆蓋
+        over_c1, over_c2 = st.columns(2)
+        with over_c1:
+            manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
+        with over_c2:
+            manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
 
     # 危評邏輯
     risk_reasons = []
@@ -264,7 +276,6 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-# [Key Update v6.38] RC Structure Days = 28
 struct_map_above = {"RC造": 28, "SRC造": 25, "SS造": 7, "SC造": 21}
 
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
@@ -372,11 +383,17 @@ d_plunge_col = 0
 if "逆打" in b_method:
     d_plunge_col = int(45 * area_multiplier) 
 
-d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
-if manual_dw_length_m > 0 and "連續壁" in excavation_system:
-     d_retain_work = int(base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col)
+# [Manual Override Logic v6.39]
+if manual_retain_days > 0:
+    d_retain_work = manual_retain_days
+    dw_note = "依廠商預估"
+    setup_note = "手動覆蓋"
 else:
-     d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col) * area_multiplier)
+    # Standard logic
+    if manual_dw_length_m > 0 and "連續壁" in excavation_system:
+         d_retain_work = int(base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col)
+    else:
+         d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
 
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
@@ -423,7 +440,6 @@ if d_strut_removal > 0: struct_note_base = f"38天/層 + 拆撐{days_per_strut_r
 elif "逆打" in b_method: struct_note_base = f"38天/層 x 1.2(逆打係數)"
 else: struct_note_base = f"38天/層"
 
-# [Key Update v6.38] External Wall Base = 20
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 28) * area_multiplier * k_usage)
 d_ext_wall = int(calc_floors_struct * 20 * area_multiplier * ext_wall_multiplier * k_usage)
 
@@ -435,7 +451,6 @@ if "室內裝修工程" in scope_options:
     d_fit_out = int((60 + calc_floors_struct * 3) * area_multiplier * k_usage)
 else: d_fit_out = 0
 
-# [Key Update v6.38] Landscape = 75
 if "景觀工程" in scope_options:
     d_landscape = int(75 * base_area_factor) 
 else: d_landscape = 0
@@ -448,14 +463,20 @@ else:
     d_insp = d_insp_base
     insp_note = "標準驗收流程"
 
+# [Manual Override Logic v6.39 - Crane]
 needs_tower_crane = False
+crane_note = "含勞檢危險性機械檢查"
 if struct_above in ["SS造", "SC造", "SRC造"] or display_max_floor >= 15:
     needs_tower_crane = True
 
-# [Key Update v6.38] Tower Crane = 40
-d_tower_crane = 0
-if needs_tower_crane:
-    d_tower_crane = 40 
+d_tower_crane = 40
+if manual_crane_days > 0:
+    d_tower_crane = manual_crane_days
+    needs_tower_crane = True # Force enable if manual override
+    crane_note = "依廠商預估"
+
+if not needs_tower_crane:
+    d_tower_crane = 0
 
 # [B] 日期推算
 def get_end_date(start_date, days_needed):
@@ -599,7 +620,7 @@ if needs_tower_crane:
         "需用工作天": d_tower_crane, 
         "Start": p_tower_s, 
         "Finish": p_tower_e, 
-        "備註": "含勞檢危險性機械檢查"
+        "備註": crane_note
     })
 
 schedule_data.extend([
