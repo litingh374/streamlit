@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.45", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.46", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -41,8 +41,8 @@ st.markdown("""
 st.title("🏗️ 建築施工工期估算輔助系統")
 project_name = st.text_input("📝 請輸入專案名稱", value="未命名專案")
 
-# --- 4. 一般參數輸入區 (Sections 1-5) ---
-st.subheader("📋 建築規模參數 (一般設定)")
+# --- 4. 一般參數輸入區 ---
+st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     
     # === 1. 核心構造與工法 ===
@@ -110,7 +110,6 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         
         excavation_system = st.selectbox("開挖擋土系統", excav_options, help=help_text)
         
-        # Define Map immediately
         excavation_map = {
             "連續壁 + 型鋼內支撐 (標準)": 1.0, 
             "連續壁 + 地錨 (開挖動線佳)": 0.9,
@@ -208,7 +207,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
 # ==========================================
-# [Key Update v6.45] Independent Advanced Block
+# [Key Update v6.45] Independent Advanced Block (Fixed Layout)
 # ==========================================
 st.write("") # Spacer
 manual_height_m = 0.0
@@ -222,22 +221,21 @@ with st.expander("🔧 進階：詳細物理量與廠商工期覆蓋 (選填/點
     with st.warning(""): 
         st.markdown("<div class='adv-header'>📐 1. 物理量精算 (圖面數據)</div>", unsafe_allow_html=True)
         
-        # Row 1: Building Height (Standalone)
+        # Row 1: Building Height (Independent)
         col_h1, col_h2 = st.columns([1, 3])
         with col_h1:
-            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審與危評判定")
+            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評判定")
         
-        # Row 2: DW Dimensions (User Specified Layout)
-        st.markdown("**連續壁/開挖規格 (請依圖面輸入)**")
+        # Row 2: DW Dimensions (L, W, H)
         adv_c1, adv_c2, adv_c3, adv_c4 = st.columns(4)
         
         with adv_c1:
-            dw_L = st.number_input("連續壁長 (L)", min_value=0.0, step=1.0)
+            dw_L = st.number_input("連續壁長(L)", min_value=0.0, step=1.0)
         with adv_c2:
-            dw_W = st.number_input("連續壁寬 (W)", min_value=0.0, step=1.0)
+            dw_W = st.number_input("連續壁寬(W)", min_value=0.0, step=1.0)
         with adv_c3:
             # Depth maps to excavation depth for calculation
-            manual_excav_depth_m = st.number_input("連續壁深 (H)", min_value=0.0, step=0.1, help="開挖深度，連動土方量計算")
+            manual_excav_depth_m = st.number_input("連續壁深(H)", min_value=0.0, step=0.1, help="開挖深度，連動土方量計算")
         
         # Auto Calc Logic
         calc_dw_perimeter = 0.0
@@ -663,32 +661,6 @@ sched_display_df = sched_display_df.sort_values(by="Start")
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
-
-# --- 8. 甘特圖 ---
-st.subheader("📊 專案進度甘特圖")
-if not sched_display_df.empty:
-    gantt_df = sched_display_df.copy()
-    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#696969", "#708090", "#A0522D", "#DC143C", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#556B2F", "#DAA520"]
-    fig = px.timeline(
-        gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
-        color_discrete_sequence=professional_colors, text="工項階段", 
-        title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=600
-    )
-    fig.update_traces(
-        textposition='inside', insidetextanchor='start', width=0.5, 
-        marker_line_width=0, opacity=0.9, textfont=dict(size=16, family="Microsoft JhengHei")
-    )
-    fig.update_layout(
-        plot_bgcolor='white', font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), 
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), 
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), 
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("尚無工期資料，請檢查參數設定。")
 
 # --- 9. Excel 導出 ---
 st.divider()
