@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.40", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.41", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -42,9 +42,9 @@ st.markdown("""
         font-size: 18px; font-weight: bold; color: #2D2926; 
         border-bottom: 2px solid #FFB81C; padding-bottom: 5px; margin-bottom: 15px; margin-top: 20px;
     }
-    /* Advanced Section Styling */
+    /* Advanced Section Styling - Darker headers for the yellow background */
     .adv-header {
-        color: #004085; font-weight: bold; font-size: 16px; margin-bottom: 10px; border-bottom: 1px solid #b8daff; padding-bottom: 5px;
+        color: #856404; font-weight: bold; font-size: 16px; margin-bottom: 10px; border-bottom: 1px solid #ffeeba; padding-bottom: 5px;
     }
     div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; margin-top: 5px; }
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
@@ -201,42 +201,48 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Key Update v6.40] Colored Advanced Section
+    # [Key Update v6.41] Distinct Color & Layout for Advanced Section
     manual_height_m = 0.0
     manual_excav_depth_m = 0.0
     manual_dw_length_m = 0.0
     manual_retain_days = 0
     manual_crane_days = 0
     
-    with st.expander("🔧 進階：詳細數據與廠商工期覆蓋 (點擊展開)", expanded=False):
-        # Use st.info for a colored background container (Blue-ish)
-        with st.info(""):
+    with st.expander("🔧 進階：手動輸入詳細工程數據 (選填)", expanded=False):
+        # Use st.warning for distinct Yellow Background
+        with st.warning(""):
             st.markdown("<div class='adv-header'>📐 1. 物理量精算 (系統依此數據優化估算)</div>", unsafe_allow_html=True)
-            adv_c1, adv_c2 = st.columns(2)
-            with adv_c1:
-                st.markdown("**建物與開挖**")
-                manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評")
-                manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1, help="影響土方量")
             
+            # Row 1: Height
+            st.markdown("**建物高度資訊**")
+            col_h1, col_h2 = st.columns([1, 2])
+            with col_h1:
+                manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評")
+            
+            # Row 2: DW Dimensions (User Requested Layout)
+            st.markdown("**連續壁/開挖尺寸資訊**")
+            adv_c1, adv_c2, adv_c3 = st.columns(3)
+            with adv_c1:
+                site_L = st.number_input("基地長度 (m)", min_value=0.0, step=1.0)
             with adv_c2:
-                st.markdown("**連續壁周長計算**")
-                # [New Input] Calculator for DW Length
-                col_L, col_W = st.columns(2)
-                with col_L: site_L = st.number_input("基地長度 (m)", min_value=0.0, step=1.0)
-                with col_W: site_W = st.number_input("基地寬度 (m)", min_value=0.0, step=1.0)
-                
-                calc_dw_perimeter = 0.0
-                if site_L > 0 and site_W > 0:
-                    calc_dw_perimeter = (site_L + site_W) * 2
-                    st.caption(f"自動計算周長: {calc_dw_perimeter} m")
-                
-                manual_dw_length_m = st.number_input(
-                    "連續壁總長度 (m)", 
-                    min_value=0.0, 
-                    value=calc_dw_perimeter, 
-                    step=1.0, 
-                    help="預設為 (長+寬)x2，若為不規則形狀請直接修正此數值"
-                )
+                site_W = st.number_input("基地寬度 (m)", min_value=0.0, step=1.0)
+            with adv_c3:
+                manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1, help="影響土方量與危評")
+            
+            # Auto Calc Display
+            calc_dw_perimeter = 0.0
+            if site_L > 0 and site_W > 0:
+                calc_dw_perimeter = (site_L + site_W) * 2
+                st.caption(f"👉 自動計算周長: **{calc_dw_perimeter} m**")
+            
+            # Row 3: Total DW Length (Modifiable)
+            manual_dw_length_m = st.number_input(
+                "連續壁總長度 (m)", 
+                min_value=0.0, 
+                value=calc_dw_perimeter, 
+                step=1.0, 
+                help="預設為 (長+寬)x2，若為不規則形狀請直接修正此數值"
+            )
 
             st.markdown("---")
             st.markdown("<div class='adv-header'>👷 2. 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
@@ -663,32 +669,6 @@ sched_display_df = sched_display_df.sort_values(by="Start")
 sched_display_df["預計開始"] = sched_display_df["Start"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 sched_display_df["預計完成"] = sched_display_df["Finish"].apply(lambda x: str(x) if enable_date else "依開工日推算")
 st.dataframe(sched_display_df[["工項階段", "需用工作天", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
-
-# --- 8. 甘特圖 ---
-st.subheader("📊 專案進度甘特圖")
-if not sched_display_df.empty:
-    gantt_df = sched_display_df.copy()
-    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#696969", "#708090", "#A0522D", "#DC143C", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#556B2F", "#DAA520"]
-    fig = px.timeline(
-        gantt_df, x_start="Start", x_end="Finish", y="工項階段", color="工項階段",
-        color_discrete_sequence=professional_colors, text="工項階段", 
-        title=f"【{project_name}】工程進度模擬 (地上:{struct_above} / 地下:{struct_below})",
-        hover_data={"需用工作天": True, "備註": True}, height=600
-    )
-    fig.update_traces(
-        textposition='inside', insidetextanchor='start', width=0.5, 
-        marker_line_width=0, opacity=0.9, textfont=dict(size=16, family="Microsoft JhengHei")
-    )
-    fig.update_layout(
-        plot_bgcolor='white', font=dict(family="Microsoft JhengHei", size=14, color="#2D2926"), 
-        xaxis=dict(title="工程期程", showgrid=True, gridcolor='#EEE', tickfont=dict(size=14)), 
-        yaxis=dict(title="", autorange="reversed", tickfont=dict(size=14)), 
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12)), 
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("尚無工期資料，請檢查參數設定。")
 
 # --- 9. Excel 導出 ---
 st.divider()
