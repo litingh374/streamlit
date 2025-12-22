@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.39", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.40", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -41,6 +41,10 @@ st.markdown("""
     .section-header {
         font-size: 18px; font-weight: bold; color: #2D2926; 
         border-bottom: 2px solid #FFB81C; padding-bottom: 5px; margin-bottom: 15px; margin-top: 20px;
+    }
+    /* Advanced Section Styling */
+    .adv-header {
+        color: #004085; font-weight: bold; font-size: 16px; margin-bottom: 10px; border-bottom: 1px solid #b8daff; padding-bottom: 5px;
     }
     div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; margin-top: 5px; }
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
@@ -197,29 +201,50 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # 進階數據 & 手動覆蓋 (v6.39 Update)
+    # [Key Update v6.40] Colored Advanced Section
     manual_height_m = 0.0
     manual_excav_depth_m = 0.0
     manual_dw_length_m = 0.0
     manual_retain_days = 0
     manual_crane_days = 0
     
-    with st.expander("🔧 進階：手動輸入詳細工程數據 (選填)", expanded=False):
-        st.caption("💡 上方為物理量參數 (精算用)，下方為廠商報價工期 (強制覆蓋用)。")
-        
-        # 物理量
-        adv_c1, adv_c2, adv_c3 = st.columns(3)
-        with adv_c1: manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1)
-        with adv_c2: manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1)
-        with adv_c3: manual_dw_length_m = st.number_input("連續壁總長度 (m)", min_value=0.0, step=1.0)
-        
-        st.divider()
-        # 廠商工期覆蓋
-        over_c1, over_c2 = st.columns(2)
-        with over_c1:
-            manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
-        with over_c2:
-            manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
+    with st.expander("🔧 進階：詳細數據與廠商工期覆蓋 (點擊展開)", expanded=False):
+        # Use st.info for a colored background container (Blue-ish)
+        with st.info(""):
+            st.markdown("<div class='adv-header'>📐 1. 物理量精算 (系統依此數據優化估算)</div>", unsafe_allow_html=True)
+            adv_c1, adv_c2 = st.columns(2)
+            with adv_c1:
+                st.markdown("**建物與開挖**")
+                manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響外審危評")
+                manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1, help="影響土方量")
+            
+            with adv_c2:
+                st.markdown("**連續壁周長計算**")
+                # [New Input] Calculator for DW Length
+                col_L, col_W = st.columns(2)
+                with col_L: site_L = st.number_input("基地長度 (m)", min_value=0.0, step=1.0)
+                with col_W: site_W = st.number_input("基地寬度 (m)", min_value=0.0, step=1.0)
+                
+                calc_dw_perimeter = 0.0
+                if site_L > 0 and site_W > 0:
+                    calc_dw_perimeter = (site_L + site_W) * 2
+                    st.caption(f"自動計算周長: {calc_dw_perimeter} m")
+                
+                manual_dw_length_m = st.number_input(
+                    "連續壁總長度 (m)", 
+                    min_value=0.0, 
+                    value=calc_dw_perimeter, 
+                    step=1.0, 
+                    help="預設為 (長+寬)x2，若為不規則形狀請直接修正此數值"
+                )
+
+            st.markdown("---")
+            st.markdown("<div class='adv-header'>👷 2. 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
+            over_c1, over_c2 = st.columns(2)
+            with over_c1:
+                manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
+            with over_c2:
+                manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期，若輸入將覆蓋系統計算")
 
     # 危評邏輯
     risk_reasons = []
@@ -463,7 +488,6 @@ else:
     d_insp = d_insp_base
     insp_note = "標準驗收流程"
 
-# [Manual Override Logic v6.39 - Crane]
 needs_tower_crane = False
 crane_note = "含勞檢危險性機械檢查"
 if struct_above in ["SS造", "SC造", "SRC造"] or display_max_floor >= 15:
@@ -472,7 +496,7 @@ if struct_above in ["SS造", "SC造", "SRC造"] or display_max_floor >= 15:
 d_tower_crane = 40
 if manual_crane_days > 0:
     d_tower_crane = manual_crane_days
-    needs_tower_crane = True # Force enable if manual override
+    needs_tower_crane = True 
     crane_note = "依廠商預估"
 
 if not needs_tower_crane:
