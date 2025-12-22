@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.36", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.37", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -55,10 +55,8 @@ project_name = st.text_input("📝 請輸入專案名稱", value="未命名專�
 st.subheader("📋 建築規模參數")
 with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
     
-    # === 第一區：核心構造與工法 (Layout Updated v6.36) ===
+    # === 第一區：核心構造與工法 ===
     st.markdown("<div class='section-header'>1. 核心構造與工法</div>", unsafe_allow_html=True)
-    
-    # 4 Columns for Core Info: Type | Method | Structure Above | Structure Below
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
@@ -199,17 +197,38 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # === 危評邏輯提示 ===
+    # [Key Feature v6.37] Advanced Manual Input
+    manual_height_m = 0.0
+    manual_excav_depth_m = 0.0
+    manual_dw_length_m = 0.0
+    
+    with st.expander("🔧 進階：手動輸入詳細工程數據 (選填)", expanded=False):
+        st.caption("💡 若輸入以下數據，系統將優先採用進行精確估算，否則將依樓層與面積進行概估。")
+        adv_c1, adv_c2, adv_c3 = st.columns(3)
+        with adv_c1:
+            manual_height_m = st.number_input("建物全高 (m)", min_value=0.0, step=0.1, help="影響結構外審與危評判定")
+        with adv_c2:
+            manual_excav_depth_m = st.number_input("開挖深度 (m)", min_value=0.0, step=0.1, help="影響土方量與危評判定")
+        with adv_c3:
+            manual_dw_length_m = st.number_input("連續壁總長度 (m)", min_value=0.0, step=1.0, help="影響連續壁施作天數")
+
+    # === 危評邏輯提示 (整合進階數據) ===
     risk_reasons = []
     suggested_days = 0
-    if display_max_floor >= 16:
-        risk_reasons.append("📏 地上層數達 16F+ (建物高度約 50m 以上，需結構外審)")
+    
+    # 判斷高度：優先用手動輸入值，否則概估 (3.3m/層)
+    check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
+    # 判斷深度：優先用手動輸入值，否則概估 (3.5m/層)
+    check_depth = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
+
+    if check_height >= 50:
+        risk_reasons.append(f"📏 建物高度達 {check_height:.1f}m (≥50m 需結構外審)")
         suggested_days = 90
-    if display_max_floor >= 25:
-        risk_reasons.append("🏗️ 地上層數達 25F+ (建物高度約 80m 以上，需丁類危評)")
+    if check_height >= 80:
+        risk_reasons.append(f"🏗️ 建物高度達 {check_height:.1f}m (≥80m 需丁類危評)")
         suggested_days = 120
-    if floors_down >= 4:
-        risk_reasons.append("⛏️ 地下層數達 B4+ (開挖深度約 15m 以上，需丁類危評)")
+    if check_depth >= 15:
+        risk_reasons.append(f"⛏️ 開挖深度達 {check_depth:.1f}m (≥15m 需丁類危評)")
         if suggested_days < 120:
             suggested_days = max(suggested_days, 60)
             if suggested_days == 90 and "結構外審" in str(risk_reasons):
@@ -222,7 +241,7 @@ with st.expander("點擊展開/隱藏 參數設定面板", expanded=True):
         else:
             st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br>已加入 <b>{manual_review_days_input} 天</b>。</div>""", unsafe_allow_html=True)
 
-    # === 第五區：外觀與機電裝修 (Moved Here v6.36) ===
+    # === 第五區：外觀與機電裝修 ===
     st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
     f1, f2 = st.columns(2)
     with f1:
@@ -261,7 +280,6 @@ k_usage = k_usage_base * multi_building_factor
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
-# [FIX] Define excavation_map explicitly here to avoid NameError
 excavation_map = {
     "連續壁 + 型鋼內支撐 (標準)": 1.0, 
     "連續壁 + 地錨 (開挖動線佳)": 0.9,
@@ -335,8 +353,24 @@ sub_speed_factor = 1.15 if "逆打" in b_method else 1.0
 d_aux_wall_days = int(60 * aux_wall_factor) 
 
 base_retain = 10 
+# [Key Update v6.37] Diaphragm Wall Precise Calculation
+dw_note = ""
 if "連續壁" in excavation_system: 
-    base_retain = 60
+    # Use manual length if provided
+    if manual_dw_length_m > 0:
+        # Estimation: Standard panel ~6m. 1 machine ~2.5 days/panel.
+        # Assume 1 machine for small (<500ping), 2 for medium, 3 for large.
+        n_machines = 1
+        if base_area_ping > 1000: n_machines = 3
+        elif base_area_ping > 500: n_machines = 2
+        
+        n_panels = manual_dw_length_m / 6.0
+        calculated_days = (n_panels * 2.5) / n_machines
+        base_retain = int(calculated_days) + 5 # +5 buffer
+        dw_note = f"依長度{manual_dw_length_m}m推算"
+    else:
+        base_retain = 60
+    
     if d_dw_setup == 0:
         d_dw_setup = int(14 * area_multiplier)
         setup_note = "標準導溝/鋪面"
@@ -348,16 +382,32 @@ d_plunge_col = 0
 if "逆打" in b_method:
     d_plunge_col = int(45 * area_multiplier) 
 
-d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col) * area_multiplier)
+d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
+# Note: Base retain calculation above already factored scale if manual, if not manual, apply area_multiplier
+if manual_dw_length_m > 0 and "連續壁" in excavation_system:
+     # If manual, area_multiplier is already considered in machine count, don't double count excessively
+     # But keeping structure simple: let's treat calculated days as base and apply modest factor or 1.0
+     d_retain_work = int(base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col)
+else:
+     d_retain_work = int((base_retain + d_dw_setup + d_aux_wall_days + d_plunge_col) * area_multiplier)
 
+
+# [Key Update v6.37] Excavation Precise Calculation
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
 
+# Recalculate soil limit based on Manual Depth if provided
 if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
-    total_soil_m3 = base_area_m2 * (floors_down * 3.5) * 1.25
+    # Use manual depth if available, else estimate
+    depth_calc = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
+    
+    total_soil_m3 = base_area_m2 * depth_calc * 1.25
     d_excav_limited = math.ceil(total_soil_m3 / daily_soil_limit)
     d_excav_phase = max(d_excav_std, d_excav_limited)
-    if d_excav_limited > d_excav_std:
+    
+    if manual_excav_depth_m > 0:
+        excav_note = f"精算深度{depth_calc}m (限{daily_soil_limit}m³)"
+    elif d_excav_limited > d_excav_std:
         excav_note = f"受限每日{daily_soil_limit}m³"
 else:
     d_excav_phase = d_excav_std
@@ -537,6 +587,7 @@ st.subheader("📅 詳細工項進度建議表")
 excav_str_display = f"工法:{excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
 if d_dw_setup > 0: excav_str_display += f"\n({setup_note})"
+if dw_note: excav_str_display += f"\n({dw_note})"
 if d_plunge_col > 0: excav_str_display += f"\n(含逆打鋼柱)"
 if "不回填" in backfill_method and d_dw_setup > 20: excav_str_display += "\n(含施工構台架設)"
 
