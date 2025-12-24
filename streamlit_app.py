@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.51", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.52", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -449,7 +449,7 @@ else: struct_note_base = f"38天/層"
 
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 28) * area_multiplier * k_usage)
 
-# [修正] 外牆工期計算 (改為 15 天/層)
+# 外牆 15天/層
 d_ext_wall = int(calc_floors_struct * 15 * area_multiplier * ext_wall_multiplier * k_usage)
 
 if "機電管線工程" in scope_options:
@@ -457,7 +457,8 @@ if "機電管線工程" in scope_options:
 else: d_mep = 0
 
 if "室內裝修工程" in scope_options:
-    d_fit_out = int((60 + calc_floors_struct * 3) * area_multiplier * k_usage)
+    # [Modify] 裝修工程改為 7天/層
+    d_fit_out = int((60 + calc_floors_struct * 7) * area_multiplier * k_usage)
 else: d_fit_out = 0
 
 if "景觀工程" in scope_options:
