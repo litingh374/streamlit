@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.50", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.51", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -137,7 +137,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     with g3:
         st.write("") 
 
-    # === 4. 規模量體設定 (修改版面：只留面積) ===
+    # === 4. 規模量體設定 ===
     st.markdown("<div class='section-header'>4. 規模量體設定</div>", unsafe_allow_html=True)
     dim_c1, dim_c2 = st.columns(2)
     
@@ -152,7 +152,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         total_fa_ping = total_fa_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{total_fa_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
-    # --- 樓層與地下室設定 (整合在此) ---
+    # --- 樓層與地下室設定 ---
     building_details_df = None
     max_floors_up = 1
     building_count = 1
@@ -198,9 +198,8 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 st.error("⚠️ 請至少輸入一棟資料")
                 calc_floors_struct = 15
     else:
-        # === 單棟模式：這裡是你要求修改的排版 ===
+        # === 單棟模式：層數並排設定 ===
         st.markdown("##### 🏢 層數設定")
-        # 修改為 3 欄並排
         s_col1, s_col2, s_col3 = st.columns(3) 
         
         with s_col1: 
@@ -210,10 +209,10 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, key="fr_single")
             
         with s_col3: 
-            # 將地下層數移到這裡
+            # 地下層數移至此處
             floors_down = st.number_input("地下層數 (B)", min_value=0, value=3, key="fd_single")
             
-            # 將土方管制選項移到這裡
+            # 土方管制選項移至此處
             enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_single")
             if enable_soil_limit:
                 daily_soil_limit = st.number_input("每日限出土 (m³)", min_value=10, value=300, key="dl_single")
@@ -223,7 +222,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-    # [Key Update] Integrated Height/Depth Input
+    # [高度與開挖深度]
     st.markdown("##### 📏 建物高度與開挖深度 (選填)")
     dim_c4, dim_c5 = st.columns(2)
     with dim_c4:
@@ -242,14 +241,13 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         scope_options = st.multiselect("納入工項", ["機電管線工程", "室內裝修工程", "景觀工程"], default=["機電管線工程", "室內裝修工程", "景觀工程"])
 
 # ==========================================
-# Advanced Block (Simplified)
+# 進階設定區塊
 # ==========================================
 st.write("") # Spacer
 manual_retain_days = 0
 manual_crane_days = 0
 
 with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expanded=False):
-    # Distinct Yellow Background
     with st.warning(""): 
         st.markdown("<div class='adv-header'>👷 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
         over_c1, over_c2 = st.columns(2)
@@ -450,7 +448,9 @@ elif "逆打" in b_method: struct_note_base = f"38天/層 x 1.2(逆打係數)"
 else: struct_note_base = f"38天/層"
 
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 28) * area_multiplier * k_usage)
-d_ext_wall = int(calc_floors_struct * 20 * area_multiplier * ext_wall_multiplier * k_usage)
+
+# [修正] 外牆工期計算 (改為 15 天/層)
+d_ext_wall = int(calc_floors_struct * 15 * area_multiplier * ext_wall_multiplier * k_usage)
 
 if "機電管線工程" in scope_options:
     d_mep = int((60 + calc_floors_struct * 4) * area_multiplier * k_usage)
