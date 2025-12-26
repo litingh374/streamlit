@@ -1,6 +1,4 @@
-這是一份針對 **v6.36 版本** 的完整 `README.md` 文件。您可以將其儲存為專案說明檔，方便團隊成員或使用者理解系統邏輯與操作方式。
-
----
+https://ftli374.streamlit.app/
 
 # 🏗️ 建築施工工期估算輔助系統 (Construction Schedule Estimator)
 
@@ -213,8 +211,8 @@ streamlit run app.py
 * 將「外牆/納入工項」移至最後。
 * 完成全系統邏輯檢核。
 ---
-https://ftli374.streamlit.app/
 
 ## ⚠️ 免責聲明
+
 
 本系統提供之工期僅供 **規劃階段參考 (Reference Only)**。實際工期應視詳細設計圖說、地質鑽探報告、交通維持計畫、鄰房現況及承攬營造廠之施工計畫而定。
