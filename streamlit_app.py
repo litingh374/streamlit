@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.57", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.58", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,7 +38,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.57")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.58")
 project_name = st.text_input("📝 請輸入專案名稱", value="未命名專案")
 
 # --- 4. 一般參數輸入區 ---
@@ -215,13 +215,11 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-        # [v6.57 修復] 單棟模式下，利用 session_state 讓 Checkbox 位於輸入框下方，確保輸入框對齊
+        # 單棟模式下，利用 session_state 讓 Checkbox 位於輸入框下方，確保輸入框對齊
         with s_col3:
-            # 1. 先取得 Checkbox 的狀態 (預設 False)
             toggle_state = st.session_state.get("complex_toggle_single", False)
             is_complex_excavation = toggle_state
 
-            # 2. 先渲染輸入框 (確保對齊)
             if toggle_state:
                 # 複雜模式：輸入框變為唯讀，顯示計算結果
                 floors_down_input = st.number_input("加權平均層數 (B)", value=3.0, disabled=True, key="fd_disabled_view", help="此數值由下方分區表計算而得")
@@ -230,12 +228,10 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=3.0, step=0.5, key="fd_single_real")
                 floors_down = floors_down_input
 
-            # 3. 再渲染 Checkbox (位於下方)
             st.checkbox("啟用分區開挖 (深淺不一)", key="complex_toggle_single")
 
     # === 共用的地下室設定邏輯 (包含複雜開挖表格) ===
     
-    # 如果是集合住宅，checkbox 還沒出現，要在這裡補上
     if "集合住宅" in b_type:
         is_complex_excavation = st.checkbox("啟用分區開挖深度設定 (深淺不一)", value=False, key="complex_toggle_multi")
         if not is_complex_excavation:
@@ -284,13 +280,19 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     if enable_soil_limit:
         daily_soil_limit = st.number_input("每日限出土 (m³)", min_value=10, value=300, key="dl_common")
 
-    # [高度與開挖深度] (自動帶入)
+    # [v6.58 更新] 高度與開挖深度設定 (3欄並排，新增屋突高度)
     st.markdown("##### 📏 建物高度與開挖深度 (選填)")
-    dim_c4, dim_c5 = st.columns(2)
+    dim_c4, dim_c5, dim_c6 = st.columns(3)
+    
     with dim_c4:
         est_h = display_max_floor * 3.3
         manual_height_m = st.number_input(f"建物全高 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則依 [地上層x3.3m] 估算 (約 {est_h:.1f}m)。")
+    
     with dim_c5:
+        # [v6.58 新增] 屋突高度
+        manual_roof_height_m = st.number_input(f"屋突高度 (m)", value=0.0, step=0.1, help="僅供記錄參考，不影響工期計算")
+
+    with dim_c6:
         # 預設深度邏輯
         if is_complex_excavation:
             default_depth_val = max_depth_complex # 複雜模式用最大深度
@@ -749,7 +751,7 @@ if rw_aux_options: excavation_str += f" (輔助: {aux_str})"
 
 # 樓層規模顯示字串調整
 if is_complex_excavation:
-    floor_desc = f"加權平均地下 {floors_down:.1f} B (最大深 {max_depth_complex}m) / 最高地上 {display_max_floor} F"
+    floor_desc = f"加權平均地下 {floors_down:.1f} B (最大深 {max_depth_complex}m) / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"
 else:
     floor_desc = f"地下 {floors_down} B / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"
 
@@ -766,6 +768,7 @@ report_rows = [
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
     ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"],
     ["樓層規模", floor_desc],
+    ["建物高度", f"建物全高 {manual_height_m}m / 屋突高度 {manual_roof_height_m}m"],
     ["納入工項", ", ".join(scope_options)],
     ["舊地下室處理", f"{obs_strategy} / {deep_gw_seq}" if is_deep_demo else "無"],
     ["土方管制", f"每日限 {daily_soil_limit} m³" if enable_soil_limit else "無"],
