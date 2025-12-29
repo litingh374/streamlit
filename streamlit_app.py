@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.56", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.57", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-# [修改] 標題加上 v6.56 以便識別
-st.title("🏗️ 建築施工工期估算輔助系統 v6.56") 
+st.title("🏗️ 建築施工工期估算輔助系統 v6.57")
 project_name = st.text_input("📝 請輸入專案名稱", value="未命名專案")
 
 # --- 4. 一般參數輸入區 ---
@@ -202,7 +201,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         st.markdown("##### ⛏️ 地下開挖與樓層設定")
         
     else:
-        # 單棟模式
+        # 單棟模式 (包含版面修復)
         st.markdown("##### 🏢 層數設定")
         s_col1, s_col2, s_col3 = st.columns(3) 
         
@@ -216,23 +215,23 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         display_max_roof = floors_roof
         building_count = 1
 
-        # [v6.56 修復] 單棟模式下，地下層數回到第三欄，但如果啟用複雜模式則變為唯讀
+        # [v6.57 修復] 單棟模式下，利用 session_state 讓 Checkbox 位於輸入框下方，確保輸入框對齊
         with s_col3:
-            # 這裡用一個空白的 container 先佔位，我們稍後再填入
-            # 但因為 checkbox 在此 container 之後才定義，為了讓版面邏輯順暢，
-            # 我們這裡先不做 widget，而是將 widget 邏輯移到下方，再利用 st.empty() 或 container 回填
-            # 不過 Streamlit 簡單做法是：直接檢查 session state 或預設值
-            
-            # 這裡我們採取最簡單直覺的做法：直接顯示
-            # 為了避免 "使用未定義變數" 的錯誤，我們先放一個 checkbox
-            is_complex_excavation = st.checkbox("啟用分區開挖 (深淺不一)", value=False, key="complex_toggle_single")
-            
-            if is_complex_excavation:
-                floors_down_input = st.number_input("加權平均層數 (B)", value=3.0, disabled=True, key="fd_disabled_view")
-                st.caption("請於下方表格設定細節")
+            # 1. 先取得 Checkbox 的狀態 (預設 False)
+            toggle_state = st.session_state.get("complex_toggle_single", False)
+            is_complex_excavation = toggle_state
+
+            # 2. 先渲染輸入框 (確保對齊)
+            if toggle_state:
+                # 複雜模式：輸入框變為唯讀，顯示計算結果
+                floors_down_input = st.number_input("加權平均層數 (B)", value=3.0, disabled=True, key="fd_disabled_view", help="此數值由下方分區表計算而得")
             else:
+                # 一般模式：輸入框可編輯
                 floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=3.0, step=0.5, key="fd_single_real")
                 floors_down = floors_down_input
+
+            # 3. 再渲染 Checkbox (位於下方)
+            st.checkbox("啟用分區開挖 (深淺不一)", key="complex_toggle_single")
 
     # === 共用的地下室設定邏輯 (包含複雜開挖表格) ===
     
