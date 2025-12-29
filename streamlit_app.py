@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.54", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.55", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -164,6 +164,12 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     floors_down = 3
     enable_soil_limit = False
     daily_soil_limit = 300
+    
+    # [v6.55 Update] 複雜開挖深度變數
+    is_complex_excavation = False
+    weighted_avg_depth = 0.0
+    complex_soil_vol = 0.0
+    max_depth_complex = 0.0
 
     if "集合住宅" in b_type:
         st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置")
@@ -176,13 +182,6 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             ])
             edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=False, key="building_editor", height=150)
             
-            # 因為集合住宅通常共用地下室，將地下室設定放在這裡
-            st.markdown("---")
-            floors_down = st.number_input("地下層數 (B)", min_value=0, value=3, key="fd_multi")
-            enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_multi")
-            if enable_soil_limit:
-                daily_soil_limit = st.number_input("每日最大出土量 (m³/日)", min_value=10, value=300, key="dl_multi")
-
         with t_col2:
             if not edited_df.empty:
                 edited_df["結構總層"] = edited_df["地上層數"] + edited_df["屋突層數"]
@@ -197,40 +196,93 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             else:
                 st.error("⚠️ 請至少輸入一棟資料")
                 calc_floors_struct = 15
+
+        st.markdown("---")
+        # 集合住宅的地下室設定 (與單棟邏輯合併處理)
+        
     else:
-        # === 單棟模式：層數並排設定 ===
         st.markdown("##### 🏢 層數設定")
         s_col1, s_col2, s_col3 = st.columns(3) 
+        with s_col1: floors_up = st.number_input("地上層數 (F)", min_value=1, value=12, key="fu_single")
+        with s_col2: floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, key="fr_single")
+        with s_col3: st.write("") # 佔位
         
-        with s_col1: 
-            floors_up = st.number_input("地上層數 (F)", min_value=1, value=12, key="fu_single")
-        
-        with s_col2: 
-            floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, key="fr_single")
-            
-        with s_col3: 
-            # 地下層數移至此處
-            floors_down = st.number_input("地下層數 (B)", min_value=0, value=3, key="fd_single")
-            
-            # 土方管制選項移至此處
-            enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_single")
-            if enable_soil_limit:
-                daily_soil_limit = st.number_input("每日限出土 (m³)", min_value=10, value=300, key="dl_single")
-
         calc_floors_struct = floors_up + floors_roof
         display_max_floor = floors_up
         display_max_roof = floors_roof
         building_count = 1
 
-    # [高度與開挖深度]
+    # === 地下開挖與樓層整合設定 (v6.55 修改重點) ===
+    st.markdown("##### ⛏️ 地下開挖與樓層設定")
+    
+    # 切換模式開關
+    is_complex_excavation = st.checkbox("啟用分區開挖深度設定 (深淺不一)", value=False, help="若基地內有不同深度的開挖區 (如部分B3、部分B1)，請勾選此項。")
+
+    if is_complex_excavation:
+        # 複雜模式：表格輸入
+        ce_col1, ce_col2 = st.columns([2, 1])
+        with ce_col1:
+            st.caption("請輸入各分區的面積與開挖深度：")
+            complex_data = pd.DataFrame([
+                {"分區說明": "A區 (深開挖)", "面積 (m²)": base_area_m2 * 0.7, "開挖深度 (m)": 14.5},
+                {"分區說明": "B區 (淺開挖)", "面積 (m²)": base_area_m2 * 0.3, "開挖深度 (m)": 5.0},
+            ])
+            complex_df = st.data_editor(complex_data, num_rows="dynamic", use_container_width=True, key="excav_editor")
+        
+        with ce_col2:
+            if not complex_df.empty:
+                complex_df["體積"] = complex_df["面積 (m²)"] * complex_df["開挖深度 (m)"]
+                total_complex_area = complex_df["面積 (m²)"].sum()
+                complex_soil_vol = complex_df["體積"].sum()
+                max_depth_complex = complex_df["開挖深度 (m)"].max()
+                
+                # 計算加權平均深度
+                if total_complex_area > 0:
+                    weighted_avg_depth = complex_soil_vol / total_complex_area
+                else:
+                    weighted_avg_depth = 0
+                
+                # 換算等效樓層 (假設 3.5m 一層)
+                floors_down_equiv = weighted_avg_depth / 3.5
+                floors_down = float(floors_down_equiv) # 轉為浮點數供後續計算
+                
+                st.info(f"**加權平均深度:** {weighted_avg_depth:.2f} m")
+                st.info(f"**最大開挖深度:** {max_depth_complex:.2f} m")
+                st.success(f"**換算等效樓層:** B{floors_down_equiv:.1f}")
+                
+                # 檢查面積吻合度
+                if abs(total_complex_area - base_area_m2) > 10:
+                    st.warning(f"⚠️ 分區總面積 ({total_complex_area:.0f}) 與基地面積 ({base_area_m2:.0f}) 不符，請確認。")
+            else:
+                floors_down = 3
+                weighted_avg_depth = 10.5
+    else:
+        # 一般模式：原本的單一輸入
+        ed_col1, ed_col2 = st.columns(2)
+        with ed_col1:
+            floors_down = st.number_input("地下層數 (B)", min_value=0.0, value=3.0, step=0.5, key="fd_std")
+        with ed_col2:
+             st.write("") # Spacer
+
+    # 土方管制選項 (共用)
+    enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_common")
+    if enable_soil_limit:
+        daily_soil_limit = st.number_input("每日限出土 (m³)", min_value=10, value=300, key="dl_common")
+
+    # [高度與開挖深度] (自動帶入)
     st.markdown("##### 📏 建物高度與開挖深度 (選填)")
     dim_c4, dim_c5 = st.columns(2)
     with dim_c4:
         est_h = display_max_floor * 3.3
         manual_height_m = st.number_input(f"建物全高 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則依 [地上層x3.3m] 估算 (約 {est_h:.1f}m)。")
     with dim_c5:
-        est_d = floors_down * 3.5
-        manual_excav_depth_m = st.number_input(f"地下開挖深度 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則依 [地下層x3.5m] 估算 (約 {est_d:.1f}m)。")
+        # 預設深度邏輯
+        if is_complex_excavation:
+            default_depth_val = max_depth_complex # 複雜模式用最大深度
+        else:
+            default_depth_val = floors_down * 3.5
+            
+        manual_excav_depth_m = st.number_input(f"最大開挖深度 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則自動帶入系統估算值 (約 {default_depth_val:.1f}m)。")
 
     # === 5. 外觀與機電裝修 ===
     st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
@@ -262,9 +314,15 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
 risk_reasons = []
 suggested_days = 0
 
-# [Logic Update] Use manual values if present
+# [Logic Update] Depth Check
+if manual_excav_depth_m > 0:
+    check_depth = manual_excav_depth_m
+elif is_complex_excavation:
+    check_depth = max_depth_complex
+else:
+    check_depth = floors_down * 3.5
+
 check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
-check_depth = manual_excav_depth_m if manual_excav_depth_m > 0 else (floors_down * 3.5)
 
 if check_height >= 50:
     risk_reasons.append(f"📏 建物高度達 {check_height:.1f}m (≥50m 需結構外審)")
@@ -403,14 +461,21 @@ if manual_retain_days > 0:
 else:
     d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
 
+# [Calculation Logic Update v6.55] 
+# d_excav_std uses 'floors_down' which is now Weighted Average if complex mode is on
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
 
-if enable_soil_limit and daily_soil_limit and base_area_m2 > 0:
-    # Use real depth for calculation
-    depth_calc = check_depth
-    total_soil_m3 = base_area_m2 * depth_calc * 1.25
-    d_excav_limited = math.ceil(total_soil_m3 / daily_soil_limit)
+if enable_soil_limit and daily_soil_limit:
+    # Use real soil volume for calculation
+    if is_complex_excavation:
+        total_soil_m3_final = complex_soil_vol * 1.25 # 1.25 loose factor
+    else:
+        # Standard calc
+        depth_calc = check_depth
+        total_soil_m3_final = base_area_m2 * depth_calc * 1.25
+
+    d_excav_limited = math.ceil(total_soil_m3_final / daily_soil_limit)
     d_excav_phase = max(d_excav_std, d_excav_limited)
     if d_excav_limited > d_excav_std:
         excav_note = f"受限每日{daily_soil_limit}m³"
@@ -457,7 +522,7 @@ if "機電管線工程" in scope_options:
 else: d_mep = 0
 
 if "室內裝修工程" in scope_options:
-    # [Modify] 裝修工程改為 10天/層
+    # 裝修工程 10天/層
     d_fit_out = int((60 + calc_floors_struct * 10) * area_multiplier * k_usage)
 else: d_fit_out = 0
 
@@ -604,6 +669,7 @@ if d_dw_setup > 0: excav_str_display += f"\n({setup_note})"
 if dw_note: excav_str_display += f"\n({dw_note})"
 if d_plunge_col > 0: excav_str_display += f"\n(含逆打鋼柱)"
 if "不回填" in backfill_method and d_dw_setup > 20: excav_str_display += "\n(含施工構台架設)"
+if is_complex_excavation: excav_str_display += f"\n(分區加權平均深度 {weighted_avg_depth:.1f}m)"
 
 if add_review_days > 0:
     prep_note = f"含危評審查 (+{add_review_days}天)"
@@ -692,6 +758,12 @@ aux_str = ", ".join(rw_aux_options) if rw_aux_options else "無"
 excavation_str = f"{excavation_system}"
 if rw_aux_options: excavation_str += f" (輔助: {aux_str})"
 
+# 樓層規模顯示字串調整
+if is_complex_excavation:
+    floor_desc = f"加權平均地下 {floors_down:.1f} B (最大深 {max_depth_complex}m) / 最高地上 {display_max_floor} F"
+else:
+    floor_desc = f"地下 {floors_down} B / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"
+
 report_rows = [
     ["項目名稱", project_name],
     ["[ 建築規模與條件 ]", ""],
@@ -704,7 +776,7 @@ report_rows = [
     ["基地現況", site_condition], ["地質改良", soil_improvement],
     ["基地面積", f"{base_area_m2:,.2f} m² / {base_area_ping:,.2f} 坪"],
     ["總樓地板面積", f"{total_fa_m2:,.2f} m² / {total_fa_ping:,.2f} 坪"],
-    ["樓層規模", f"地下 {floors_down} B / 最高地上 {display_max_floor} F (屋突 {display_max_roof} R)"],
+    ["樓層規模", floor_desc],
     ["納入工項", ", ".join(scope_options)],
     ["舊地下室處理", f"{obs_strategy} / {deep_gw_seq}" if is_deep_demo else "無"],
     ["土方管制", f"每日限 {daily_soil_limit} m³" if enable_soil_limit else "無"],
