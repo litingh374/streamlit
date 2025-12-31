@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.58", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.59", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,7 +38,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.58")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.59")
 project_name = st.text_input("📝 請輸入專案名稱", value="未命名專案")
 
 # --- 4. 一般參數輸入區 ---
@@ -94,37 +94,70 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         if enable_manual_review:
             manual_review_days_input = st.number_input("輸入緩衝天數", min_value=0, value=90, step=30, label_visibility="collapsed")
 
-    # === 3. 大地與基礎工程 ===
-    st.markdown("<div class='section-header'>3. 大地工程與基礎</div>", unsafe_allow_html=True)
+    # === 3. 大地與基礎工程 (v6.59 組合式工法更新) ===
+    st.markdown("<div class='section-header'>3. 大地工程與基礎 (組合式工法)</div>", unsafe_allow_html=True)
     g1, g2, g3 = st.columns(3)
     
     with g1:
-        if "逆打" in b_method:
-            excav_options = ["連續壁 + 結構樓板支撐 (逆打標準)"]
-            help_text = "逆打工法強制使用樓板支撐"
-        else:
-            excav_options = [
-                "連續壁 + 型鋼內支撐 (標準)", "連續壁 + 地錨 (開挖動線佳)",
-                "全套管切削樁 + 型鋼內支撐", "預壘樁/排樁 + 型鋼內支撐",
-                "鋼板樁 + 型鋼內支撐 (淺開挖)", "放坡開挖/無支撐 (極快)"
-            ]
-            help_text = "請選擇擋土支撐方式"
+        st.markdown("**擋土壁與支撐組合**")
         
-        excavation_system = st.selectbox("開挖擋土系統", excav_options, help=help_text)
+        # 1. 擋土壁類型 (Wall Type)
+        wall_type_options = [
+            "連續壁 (Diaphragm Wall)", 
+            "全套管切削樁 (All-Casing)", 
+            "預壘樁/排樁 (PIP/Soldier Pile)", 
+            "鋼板樁 (Sheet Pile)",
+            "無 (純明挖/放坡)"
+        ]
+        selected_wall = st.selectbox("A. 擋土壁體類型", wall_type_options)
+
+        # 2. 支撐/開挖方式 (Support Method)
+        support_type_options = [
+            "型鋼內支撐 (Strut)",
+            "地錨 (Anchor)",
+            "島式工法 (Island Method)",
+            "斜坡/明挖 (Slope/Open Cut)",
+            "結構樓板 (逆打標準)"
+        ]
+        # 智慧預選：如果選逆打，預設跳到結構樓板
+        default_support_idx = 4 if "逆打" in b_method else 0
+        selected_support = st.selectbox("B. 支撐/開挖方式", support_type_options, index=default_support_idx)
+
+        # 組合字串 (供後續邏輯判斷與報表使用)
+        excavation_system = f"{selected_wall} + {selected_support}"
         
-        # Define Map immediately
-        excavation_map = {
-            "連續壁 + 型鋼內支撐 (標準)": 1.0, 
-            "連續壁 + 地錨 (開挖動線佳)": 0.9,
-            "連續壁 + 結構樓板支撐 (逆打標準)": 1.0, 
-            "全套管切削樁 + 型鋼內支撐": 0.95, 
-            "預壘樁/排樁 + 型鋼內支撐": 0.85,
-            "鋼板樁 + 型鋼內支撐 (淺開挖)": 0.7, 
-            "放坡開挖/無支撐 (極快)": 0.5
+        # --- 計算組合係數 (Multiplier Logic) ---
+        # 基礎係數 (Wall Factors)
+        wall_factors = {
+            "連續壁 (Diaphragm Wall)": 1.0,     # 基準
+            "全套管切削樁 (All-Casing)": 0.95,  # 稍快
+            "預壘樁/排樁 (PIP/Soldier Pile)": 0.85, # 快 (如圖提及)
+            "鋼板樁 (Sheet Pile)": 0.70,      # 很快
+            "無 (純明挖/放坡)": 0.50            # 極快
         }
         
+        # 支撐係數 (Support Factors)
+        support_factors = {
+            "型鋼內支撐 (Strut)": 1.0,        # 基準
+            "地錨 (Anchor)": 0.9,             # 動線好，稍快
+            "結構樓板 (逆打標準)": 1.0,         # 標準
+            "島式工法 (Island Method)": 1.25,   # [圖] 施工較難，需分段挖土，工期長
+            "斜坡/明挖 (Slope/Open Cut)": 0.6   # [圖] 即可全面開挖，快
+        }
+        
+        # 綜合係數計算 (取兩者平均)
+        w_fac = wall_factors.get(selected_wall, 1.0)
+        s_fac = support_factors.get(selected_support, 1.0)
+        
+        # 邏輯微調：如果選島式工法，無論壁體多快，整體都會被拖慢，所以用乘法加權
+        if "島式" in selected_support:
+            excavation_map_val = w_fac * s_fac 
+        else:
+            excavation_map_val = (w_fac + s_fac) / 2
+
+        # 顯示輔助選項
         rw_aux_options = []
-        if "連續壁" in excavation_system:
+        if "連續壁" in selected_wall:
             rw_aux_options = st.multiselect("連續壁輔助措施", ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"])
 
     with g2:
@@ -133,6 +166,18 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             "筏式基礎 + 全套管基樁 (工期長)", "筏式基礎 + 壁樁 (Barrette)",
             "筏式基礎 + 微型樁 (工期短)", "獨立基腳 (無地下室)"
         ])
+        
+        # 顯示當前組合的評估
+        st.markdown("---")
+        st.caption("工法組合評估：")
+        if "島式" in selected_support:
+            st.warning("⚠️ 島式工法：土方需分階段開挖與回填，工期較難掌控且較長。")
+        elif "鋼板樁" in selected_wall and "斜坡" in selected_support:
+            st.success("✅ 鋼板樁+斜坡：施工完成後即可全面開挖，工期短。")
+        elif "連續壁" in selected_wall and "地錨" in selected_support:
+            st.info("ℹ️ 連續壁+地錨：開挖動線佳，速度優於內支撐。")
+        else:
+            st.info(f"當前工期加權係數: {excavation_map_val:.2f}")
 
     with g3:
         st.write("") 
@@ -392,7 +437,8 @@ k_usage = k_usage_base * multi_building_factor
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
-excav_multiplier = excavation_map.get(excavation_system, 1.0)
+# [v6.59] 使用組合係數
+excav_multiplier = excavation_map_val
 
 aux_wall_factor = 0
 if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20
@@ -457,14 +503,16 @@ d_aux_wall_days = int(60 * aux_wall_factor)
 
 base_retain = 10 
 dw_note = ""
-if "連續壁" in excavation_system: 
+# 根據 Wall Type 給定標準天數
+if "連續壁" in selected_wall: 
     base_retain = 60
     if d_dw_setup == 0:
         d_dw_setup = int(14 * area_multiplier)
         setup_note = "標準導溝/鋪面"
-elif "全套管" in excavation_system: base_retain = 50
-elif "預壘樁" in excavation_system: base_retain = 40
-elif "鋼板樁" in excavation_system: base_retain = 25
+elif "全套管" in selected_wall: base_retain = 50
+elif "預壘樁" in selected_wall: base_retain = 40
+elif "鋼板樁" in selected_wall: base_retain = 25
+else: base_retain = 15 # 無/明挖 (整地)
 
 d_plunge_col = 0
 if "逆打" in b_method:
@@ -500,20 +548,21 @@ else:
     d_excav_phase = d_excav_std
 
 d_strut_install = 0
-if "樓板支撐" in excavation_system:
+if "結構樓板" in selected_support:
     d_strut_install = 0 
     d_earth_work = d_excav_phase
-elif "放坡" in excavation_system or "無支撐" in excavation_system:
+elif "斜坡" in selected_support or "無" in selected_wall:
     d_strut_install = 0
     d_earth_work = d_excav_phase
 else:
+    # 一般內支撐或地錨需安裝時間
     d_strut_install = d_excav_phase
     d_earth_work = d_excav_phase
 
 days_per_floor_bd = 38
 days_per_strut_remove = 10
 
-if "放坡" in excavation_system or "無支撐" in excavation_system or "逆打" in b_method:
+if "斜坡" in selected_support or "無" in selected_wall or "逆打" in b_method:
     d_strut_removal = 0
 else:
     d_strut_removal = floors_down * days_per_strut_remove
@@ -680,7 +729,7 @@ with res_col4:
 
 # --- 7. 詳細進度拆解表 ---
 st.subheader("📅 詳細工項進度建議表")
-excav_str_display = f"工法:{excavation_system}"
+excav_str_display = f"工法: {excavation_system}"
 if rw_aux_options: excav_str_display += " (+輔助壁)"
 if d_dw_setup > 0: excav_str_display += f"\n({setup_note})"
 if dw_note: excav_str_display += f"\n({dw_note})"
