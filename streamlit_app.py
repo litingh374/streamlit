@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.59", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.60", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,9 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.59")
-project_name = st.text_input("📝 請輸入專案名稱", value="未命名專案")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.60")
+# [v6.60] 預設為空字串，強迫輸入
+project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # --- 4. 一般參數輸入區 ---
 st.subheader("📋 建築規模參數")
@@ -94,7 +95,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         if enable_manual_review:
             manual_review_days_input = st.number_input("輸入緩衝天數", min_value=0, value=90, step=30, label_visibility="collapsed")
 
-    # === 3. 大地與基礎工程 (v6.59 組合式工法更新) ===
+    # === 3. 大地與基礎工程 (組合式工法) ===
     st.markdown("<div class='section-header'>3. 大地工程與基礎 (組合式工法)</div>", unsafe_allow_html=True)
     g1, g2, g3 = st.columns(3)
     
@@ -119,43 +120,29 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             "斜坡/明挖 (Slope/Open Cut)",
             "結構樓板 (逆打標準)"
         ]
-        # 智慧預選：如果選逆打，預設跳到結構樓板
         default_support_idx = 4 if "逆打" in b_method else 0
         selected_support = st.selectbox("B. 支撐/開挖方式", support_type_options, index=default_support_idx)
 
-        # 組合字串 (供後續邏輯判斷與報表使用)
+        # 組合字串
         excavation_system = f"{selected_wall} + {selected_support}"
         
-        # --- 計算組合係數 (Multiplier Logic) ---
-        # 基礎係數 (Wall Factors)
+        # --- 計算組合係數 ---
         wall_factors = {
-            "連續壁 (Diaphragm Wall)": 1.0,     # 基準
-            "全套管切削樁 (All-Casing)": 0.95,  # 稍快
-            "預壘樁/排樁 (PIP/Soldier Pile)": 0.85, # 快 (如圖提及)
-            "鋼板樁 (Sheet Pile)": 0.70,      # 很快
-            "無 (純明挖/放坡)": 0.50            # 極快
+            "連續壁 (Diaphragm Wall)": 1.0, "全套管切削樁 (All-Casing)": 0.95,
+            "預壘樁/排樁 (PIP/Soldier Pile)": 0.85, "鋼板樁 (Sheet Pile)": 0.70, "無 (純明挖/放坡)": 0.50
         }
-        
-        # 支撐係數 (Support Factors)
         support_factors = {
-            "型鋼內支撐 (Strut)": 1.0,        # 基準
-            "地錨 (Anchor)": 0.9,             # 動線好，稍快
-            "結構樓板 (逆打標準)": 1.0,         # 標準
-            "島式工法 (Island Method)": 1.25,   # [圖] 施工較難，需分段挖土，工期長
-            "斜坡/明挖 (Slope/Open Cut)": 0.6   # [圖] 即可全面開挖，快
+            "型鋼內支撐 (Strut)": 1.0, "地錨 (Anchor)": 0.9, "結構樓板 (逆打標準)": 1.0,
+            "島式工法 (Island Method)": 1.25, "斜坡/明挖 (Slope/Open Cut)": 0.6
         }
-        
-        # 綜合係數計算 (取兩者平均)
         w_fac = wall_factors.get(selected_wall, 1.0)
         s_fac = support_factors.get(selected_support, 1.0)
         
-        # 邏輯微調：如果選島式工法，無論壁體多快，整體都會被拖慢，所以用乘法加權
         if "島式" in selected_support:
             excavation_map_val = w_fac * s_fac 
         else:
             excavation_map_val = (w_fac + s_fac) / 2
 
-        # 顯示輔助選項
         rw_aux_options = []
         if "連續壁" in selected_wall:
             rw_aux_options = st.multiselect("連續壁輔助措施", ["地中壁 (Cross Wall)", "扶壁 (Buttress Wall)"])
@@ -167,7 +154,6 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             "筏式基礎 + 微型樁 (工期短)", "獨立基腳 (無地下室)"
         ])
         
-        # 顯示當前組合的評估
         st.markdown("---")
         st.caption("工法組合評估：")
         if "島式" in selected_support:
@@ -182,18 +168,19 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     with g3:
         st.write("") 
 
-    # === 4. 規模量體設定 ===
+    # === 4. 規模量體設定 (v6.60 預設值歸零) ===
     st.markdown("<div class='section-header'>4. 規模量體設定</div>", unsafe_allow_html=True)
     dim_c1, dim_c2 = st.columns(2)
     
     with dim_c1:
-        base_area_m2 = st.number_input("基地面積 (m²)", min_value=0.0, value=1652.89, step=10.0)
+        # [v6.60] Default to 0.0
+        base_area_m2 = st.number_input("基地面積 (m²)", min_value=0.0, value=0.0, step=10.0, help="請輸入基地面積")
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
         
     with dim_c2:
-        est_fa_m2 = base_area_m2 * 18 * 0.7 
-        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=0.0, value=est_fa_m2, step=100.0)
+        # [v6.60] Default to 0.0
+        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=0.0, value=0.0, step=100.0, help="請輸入總樓地板面積")
         total_fa_ping = total_fa_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{total_fa_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
@@ -201,12 +188,12 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     building_details_df = None
     max_floors_up = 1
     building_count = 1
-    calc_floors_struct = 1
-    display_max_floor = 1
+    calc_floors_struct = 0 # [v6.60] Init to 0
+    display_max_floor = 0
     display_max_roof = 0
     
     # 初始化變數
-    floors_down = 3.0
+    floors_down = 0.0 # [v6.60] Init to 0
     enable_soil_limit = False
     daily_soil_limit = 300
     is_complex_excavation = False
@@ -219,15 +206,15 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置")
         t_col1, t_col2 = st.columns([1, 2])
         with t_col1:
+            # [v6.60] 集合住宅預設資料也清空或設為 0
             default_data = pd.DataFrame([
-                {"棟別名稱": "A棟", "地上層數": 15, "屋突層數": 2}, 
-                {"棟別名稱": "B棟", "地上層數": 15, "屋突層數": 2}, 
-                {"棟別名稱": "C棟", "地上層數": 12, "屋突層數": 1}
+                {"棟別名稱": "A棟", "地上層數": 0, "屋突層數": 0}, 
+                {"棟別名稱": "B棟", "地上層數": 0, "屋突層數": 0}, 
             ])
             edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=False, key="building_editor", height=150)
             
         with t_col2:
-            if not edited_df.empty:
+            if not edited_df.empty and edited_df["地上層數"].sum() > 0: # 檢查是否有輸入
                 edited_df["結構總層"] = edited_df["地上層數"] + edited_df["屋突層數"]
                 max_struct_idx = edited_df["結構總層"].idxmax()
                 row_max = edited_df.loc[max_struct_idx]
@@ -238,59 +225,59 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 building_details_df = edited_df
                 st.success(f"系統偵測共 **{building_count}** 棟。結構要徑依據 **{row_max['棟別名稱']}** 計算。")
             else:
-                st.error("⚠️ 請至少輸入一棟資料")
-                calc_floors_struct = 15
+                st.warning("⚠️ 請輸入至少一棟的樓層資料")
+                calc_floors_struct = 0
         
-        # 集合住宅的地下室區塊 (統一在下方處理)
         st.markdown("---")
         st.markdown("##### ⛏️ 地下開挖與樓層設定")
         
     else:
-        # 單棟模式 (包含版面修復)
+        # 單棟模式
         st.markdown("##### 🏢 層數設定")
         s_col1, s_col2, s_col3 = st.columns(3) 
         
         with s_col1: 
-            floors_up = st.number_input("地上層數 (F)", min_value=1, value=12, key="fu_single")
+            # [v6.60] Default to 0
+            floors_up = st.number_input("地上層數 (F)", min_value=0, value=0, key="fu_single")
         with s_col2: 
-            floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, key="fr_single")
+            # [v6.60] Default to 0
+            floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=0, key="fr_single")
             
         calc_floors_struct = floors_up + floors_roof
         display_max_floor = floors_up
         display_max_roof = floors_roof
         building_count = 1
 
-        # 單棟模式下，利用 session_state 讓 Checkbox 位於輸入框下方，確保輸入框對齊
         with s_col3:
             toggle_state = st.session_state.get("complex_toggle_single", False)
             is_complex_excavation = toggle_state
 
             if toggle_state:
-                # 複雜模式：輸入框變為唯讀，顯示計算結果
-                floors_down_input = st.number_input("加權平均層數 (B)", value=3.0, disabled=True, key="fd_disabled_view", help="此數值由下方分區表計算而得")
+                # 複雜模式
+                floors_down_input = st.number_input("加權平均層數 (B)", value=0.0, disabled=True, key="fd_disabled_view")
             else:
-                # 一般模式：輸入框可編輯
-                floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=3.0, step=0.5, key="fd_single_real")
+                # 一般模式 [v6.60] Default to 0.0
+                floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=0.0, step=0.5, key="fd_single_real")
                 floors_down = floors_down_input
 
             st.checkbox("啟用分區開挖 (深淺不一)", key="complex_toggle_single")
 
-    # === 共用的地下室設定邏輯 (包含複雜開挖表格) ===
-    
+    # === 共用的地下室設定邏輯 ===
     if "集合住宅" in b_type:
         is_complex_excavation = st.checkbox("啟用分區開挖深度設定 (深淺不一)", value=False, key="complex_toggle_multi")
         if not is_complex_excavation:
-            floors_down = st.number_input("地下層數 (B)", min_value=0.0, value=3.0, step=0.5, key="fd_multi")
+            # [v6.60] Default to 0.0
+            floors_down = st.number_input("地下層數 (B)", min_value=0.0, value=0.0, step=0.5, key="fd_multi")
 
-    # === 複雜模式的表格 (如果啟用) ===
+    # === 複雜模式的表格 ===
     if is_complex_excavation:
-        st.info("📋 請輸入各分區的面積與開挖深度，系統將自動計算加權平均層數：")
+        st.info("📋 請輸入各分區的面積與開挖深度：")
         ce_col1, ce_col2 = st.columns([2, 1])
         
         with ce_col1:
             complex_data = pd.DataFrame([
-                {"分區說明": "A區 (深開挖)", "面積 (m²)": base_area_m2 * 0.7, "開挖深度 (m)": 14.5},
-                {"分區說明": "B區 (淺開挖)", "面積 (m²)": base_area_m2 * 0.3, "開挖深度 (m)": 5.0},
+                {"分區說明": "A區", "面積 (m²)": 0.0, "開挖深度 (m)": 0.0},
+                {"分區說明": "B區", "面積 (m²)": 0.0, "開挖深度 (m)": 0.0},
             ])
             complex_df = st.data_editor(complex_data, num_rows="dynamic", use_container_width=True, key="excav_editor")
         
@@ -301,50 +288,40 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 complex_soil_vol = complex_df["體積"].sum()
                 max_depth_complex = complex_df["開挖深度 (m)"].max()
                 
-                # 計算加權平均深度
                 if total_complex_area > 0:
                     weighted_avg_depth = complex_soil_vol / total_complex_area
                 else:
                     weighted_avg_depth = 0
                 
-                # 換算等效樓層 (假設 3.5m 一層)
                 floors_down_equiv = weighted_avg_depth / 3.5
-                floors_down = float(floors_down_equiv) # 覆蓋掉上面的值
+                floors_down = float(floors_down_equiv)
                 
                 st.markdown(f"**加權平均深度:** `{weighted_avg_depth:.2f} m`")
-                st.markdown(f"**最大開挖深度:** `{max_depth_complex:.2f} m`")
                 st.success(f"**換算等效層數:** `B{floors_down_equiv:.1f}`")
-                
-                if abs(total_complex_area - base_area_m2) > 10:
-                    st.warning(f"⚠️ 分區合計 {total_complex_area:.0f} m² 與基地 {base_area_m2:.0f} m² 不符")
             else:
-                floors_down = 3.0
+                floors_down = 0.0
 
-    # 土方管制選項
     enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_common")
     if enable_soil_limit:
         daily_soil_limit = st.number_input("每日限出土 (m³)", min_value=10, value=300, key="dl_common")
 
-    # [v6.58 更新] 高度與開挖深度設定 (3欄並排，新增屋突高度)
+    # [高度與開挖深度]
     st.markdown("##### 📏 建物高度與開挖深度 (選填)")
     dim_c4, dim_c5, dim_c6 = st.columns(3)
     
     with dim_c4:
         est_h = display_max_floor * 3.3
-        manual_height_m = st.number_input(f"建物全高 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則依 [地上層x3.3m] 估算 (約 {est_h:.1f}m)。")
+        manual_height_m = st.number_input(f"建物全高 (m)", value=0.0, step=0.1, help="預設0則自動估算")
     
     with dim_c5:
-        # [v6.58 新增] 屋突高度
-        manual_roof_height_m = st.number_input(f"屋突高度 (m)", value=0.0, step=0.1, help="僅供記錄參考，不影響工期計算")
+        manual_roof_height_m = st.number_input(f"屋突高度 (m)", value=0.0, step=0.1)
 
     with dim_c6:
-        # 預設深度邏輯
         if is_complex_excavation:
-            default_depth_val = max_depth_complex # 複雜模式用最大深度
+            default_depth_val = max_depth_complex
         else:
             default_depth_val = floors_down * 3.5
-            
-        manual_excav_depth_m = st.number_input(f"最大開挖深度 (m)", value=0.0, step=0.1, help=f"預設 0。若為 0 則自動帶入系統估算值 (約 {default_depth_val:.1f}m)。")
+        manual_excav_depth_m = st.number_input(f"最大開挖深度 (m)", value=0.0, step=0.1, help="預設0則自動估算")
 
     # === 5. 外觀與機電裝修 ===
     st.markdown("<div class='section-header'>5. 外觀與機電裝修</div>", unsafe_allow_html=True)
@@ -357,7 +334,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
 # ==========================================
 # 進階設定區塊
 # ==========================================
-st.write("") # Spacer
+st.write("") 
 manual_retain_days = 0
 manual_crane_days = 0
 
@@ -366,11 +343,23 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
         st.markdown("<div class='adv-header'>👷 廠商工期覆蓋 (強制採用)</div>", unsafe_allow_html=True)
         over_c1, over_c2 = st.columns(2)
         with over_c1:
-            manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="廠商報價工期，輸入後將覆蓋系統計算")
+            manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="覆蓋系統計算")
         with over_c2:
-            manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="廠商報價工期，輸入後將強制開啟並覆蓋")
+            manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
-# === Calculation Logic Follows ===
+# ==========================================
+# [v6.60] 核心防呆檢查 - 若無數據則停止運算
+# ==========================================
+# 檢查條件：基地面積 > 0 且 總樓地板 > 0 且 (地上層 > 0 或 地下層 > 0)
+has_basic_data = (base_area_m2 > 0) and (total_fa_m2 > 0) and (calc_floors_struct > 0 or floors_down > 0)
+
+if not has_basic_data:
+    st.divider()
+    st.warning("👈 **【等待輸入】** 請於上方/左側輸入 **基地面積**、**總樓地板面積** 及 **樓層數** 以開始估算工期。")
+    st.info("系統已將預設值清空，方便您確認是否已輸入最新專案數據。")
+    st.stop() # 停止執行後續程式碼
+
+# === 以下為運算邏輯 (只有當數據齊全時才會執行) ===
 
 # Risk Assessment Logic
 risk_reasons = []
