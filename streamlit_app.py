@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.65", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.66", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,7 +38,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.65")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.66")
 project_name = st.text_input("📝 請輸入專案名稱", value="未命名專案")
 
 # --- 4. 一般參數輸入區 ---
@@ -49,27 +49,26 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     st.markdown("<div class='section-header'>1. 核心構造與工法</div>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        # 回復預設值 (index=0)
         b_type = st.selectbox("建物類型", ["住宅", "集合住宅 (多棟)", "辦公大樓", "飯店", "百貨", "廠房", "醫院"])
     with c2:
         b_method = st.selectbox("施工方式", ["順打工法", "逆打工法", "雙順打工法"])
     with c3:
-        struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"])
+        struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=0)
     with c4:
-        struct_below = st.selectbox("地下結構", ["RC造", "SRC造"])
+        struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=0)
 
-    # === [Section 2] 規模量體設定 (維持新順序) ===
+    # === [Section 2] 規模量體設定 (依要求移至第2順位) ===
     st.markdown("<div class='section-header'>2. 規模量體設定</div>", unsafe_allow_html=True)
     dim_c1, dim_c2 = st.columns(2)
     
     with dim_c1:
-        # 預設為 0
-        base_area_m2 = st.number_input("基地面積 (m²)", min_value=0.0, value=0.0, step=10.0)
+        base_area_m2 = st.number_input("基地面積 (m²)", min_value=0.0, value=1652.89, step=10.0)
         base_area_ping = base_area_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{base_area_ping:,.2f} 坪</div>", unsafe_allow_html=True)
         
     with dim_c2:
-        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=0.0, value=0.0, step=100.0)
+        est_fa_m2 = base_area_m2 * 18 * 0.7 
+        total_fa_m2 = st.number_input("總樓地板面積 (m²)", min_value=0.0, value=est_fa_m2, step=100.0)
         total_fa_ping = total_fa_m2 * 0.3025
         st.markdown(f"<div class='area-display'>換算：{total_fa_ping:,.2f} 坪</div>", unsafe_allow_html=True)
 
@@ -77,10 +76,10 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     building_details_df = None
     max_floors_up = 1
     building_count = 1
-    calc_floors_struct = 0
-    display_max_floor = 0
+    calc_floors_struct = 1
+    display_max_floor = 1
     display_max_roof = 0
-    floors_down = 0.0
+    floors_down = 3.0
     
     # 變數初始化
     is_complex_excavation = False
@@ -95,13 +94,14 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         t_col1, t_col2 = st.columns([1, 2])
         with t_col1:
             default_data = pd.DataFrame([
-                {"棟別名稱": "A棟", "地上層數": 0, "屋突層數": 0}, 
-                {"棟別名稱": "B棟", "地上層數": 0, "屋突層數": 0}, 
+                {"棟別名稱": "A棟", "地上層數": 15, "屋突層數": 2}, 
+                {"棟別名稱": "B棟", "地上層數": 15, "屋突層數": 2}, 
+                {"棟別名稱": "C棟", "地上層數": 12, "屋突層數": 1}
             ])
             edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=False, key="building_editor", height=150)
             
         with t_col2:
-            if not edited_df.empty and edited_df["地上層數"].sum() > 0:
+            if not edited_df.empty:
                 edited_df["結構總層"] = edited_df["地上層數"] + edited_df["屋突層數"]
                 max_struct_idx = edited_df["結構總層"].idxmax()
                 row_max = edited_df.loc[max_struct_idx]
@@ -112,14 +112,14 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 building_details_df = edited_df
                 st.success(f"系統偵測共 **{building_count}** 棟。結構要徑依據 **{row_max['棟別名稱']}** 計算。")
             else:
-                st.warning("⚠️ 請輸入至少一棟的樓層資料")
-                calc_floors_struct = 0
+                st.error("⚠️ 請至少輸入一棟資料")
+                calc_floors_struct = 15
         
         st.markdown("---")
         st.markdown("##### ⛏️ 地下開挖與樓層設定")
         
     else:
-        # 單棟模式：順序 B -> F -> R
+        # 單棟模式：調整順序為 地下(B) -> 地上(F) -> 屋突(R)
         st.markdown("##### 🏢 層數設定")
         s_col1, s_col2, s_col3 = st.columns(3) 
         
@@ -129,20 +129,20 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             is_complex_excavation = toggle_state
 
             if toggle_state:
-                floors_down_input = st.number_input("加權平均層數 (B)", value=0.0, disabled=True, key="fd_disabled_view")
+                floors_down_input = st.number_input("加權平均層數 (B)", value=3.0, disabled=True, key="fd_disabled_view")
             else:
-                floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=0.0, step=0.5, key="fd_single_real")
+                floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=3.0, step=0.5, key="fd_single_real")
                 floors_down = floors_down_input
 
             st.checkbox("啟用分區開挖 (深淺不一)", key="complex_toggle_single")
 
         # [Col 2] 地上層數 (F)
         with s_col2: 
-            floors_up = st.number_input("地上層數 (F)", min_value=0, value=0, key="fu_single")
+            floors_up = st.number_input("地上層數 (F)", min_value=1, value=12, key="fu_single")
 
         # [Col 3] 屋突層數 (R)
         with s_col3: 
-            floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=0, key="fr_single")
+            floors_roof = st.number_input("屋突層數 (R)", min_value=0, value=2, key="fr_single")
             
         calc_floors_struct = floors_up + floors_roof
         display_max_floor = floors_up
@@ -153,15 +153,15 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     if "集合住宅" in b_type:
         is_complex_excavation = st.checkbox("啟用分區開挖深度設定 (深淺不一)", value=False, key="complex_toggle_multi")
         if not is_complex_excavation:
-            floors_down = st.number_input("地下層數 (B)", min_value=0.0, value=0.0, step=0.5, key="fd_multi")
+            floors_down = st.number_input("地下層數 (B)", min_value=0.0, value=3.0, step=0.5, key="fd_multi")
 
     if is_complex_excavation:
         st.info("📋 請輸入各分區的面積與開挖深度：")
         ce_col1, ce_col2 = st.columns([2, 1])
         with ce_col1:
             complex_data = pd.DataFrame([
-                {"分區說明": "A區", "面積 (m²)": 0.0, "開挖深度 (m)": 0.0},
-                {"分區說明": "B區", "面積 (m²)": 0.0, "開挖深度 (m)": 0.0},
+                {"分區說明": "A區", "面積 (m²)": base_area_m2 * 0.7, "開挖深度 (m)": 14.5},
+                {"分區說明": "B區", "面積 (m²)": base_area_m2 * 0.3, "開挖深度 (m)": 5.0},
             ])
             complex_df = st.data_editor(complex_data, num_rows="dynamic", use_container_width=True, key="excav_editor")
         
@@ -183,17 +183,18 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 st.markdown(f"**加權平均深度:** `{weighted_avg_depth:.2f} m`")
                 st.success(f"**換算等效層數:** `B{floors_down_equiv:.1f}`")
             else:
-                floors_down = 0.0
+                floors_down = 3.0
 
     enable_soil_limit = st.checkbox("評估土方運棄管制?", value=False, key="sl_common")
     if enable_soil_limit:
         daily_soil_limit = st.number_input("每日限出土 (m³)", min_value=10, value=300, key="dl_common")
 
-    # [高度與開挖深度]
+    # [高度與開挖深度] 順序：深度 -> 建物高 -> 屋突高
     st.markdown("##### 📏 建物高度與開挖深度 (選填)")
     dim_c4, dim_c5, dim_c6 = st.columns(3)
     
     with dim_c4:
+        # 最大開挖深度
         if is_complex_excavation:
             default_depth_val = max_depth_complex
         else:
@@ -201,10 +202,12 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         manual_excav_depth_m = st.number_input(f"最大開挖深度 (m)", value=0.0, step=0.1, help="預設0則自動估算")
 
     with dim_c5:
+        # 建物全高
         est_h = display_max_floor * 3.3
         manual_height_m = st.number_input(f"建物全高 (m)", value=0.0, step=0.1, help="預設0則自動估算")
     
     with dim_c6:
+        # 屋突高度
         manual_roof_height_m = st.number_input(f"屋突高度 (m)", value=0.0, step=0.1)
 
     # === [Section 3] 基地現況與前置 ===
@@ -212,7 +215,6 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     s1, s2, s3 = st.columns(3)
     
     with s1:
-        # 回復預設值
         site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"])
         
         is_deep_demo = "舊地下室" in site_condition
@@ -245,7 +247,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         if enable_manual_review:
             manual_review_days_input = st.number_input("輸入緩衝天數", min_value=0, value=90, step=30, label_visibility="collapsed")
 
-    # === [Section 4] 大地與基礎工程 (組合式工法) ===
+    # === [Section 4] 大地與基礎工程 (組合式工法 v6.59 Logic) ===
     st.markdown("<div class='section-header'>4. 大地工程與基礎 (組合式工法)</div>", unsafe_allow_html=True)
     g1, g2, g3 = st.columns(3)
     
@@ -267,6 +269,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
 
         excavation_system = f"{selected_wall} + {selected_support}"
         
+        # 係數計算 (v6.59 Logic)
         wall_factors = {
             "連續壁 (Diaphragm Wall)": 1.0, "全套管切削樁 (All-Casing)": 0.95,
             "預壘樁/排樁 (PIP/Soldier Pile)": 0.85, "鋼板樁 (Sheet Pile)": 0.70, "無 (純明挖/放坡)": 0.50
@@ -333,22 +336,13 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
         with over_c2:
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
-# ==========================================
-# 核心防呆檢查：只檢查數值是否輸入
-# ==========================================
-has_numeric_data = (base_area_m2 > 0) and (total_fa_m2 > 0) and (calc_floors_struct > 0 or floors_down > 0)
+# === Calculation Logic Follows ===
 
-if not has_numeric_data:
-    st.divider()
-    st.warning("👈 **【等待數值】** 請輸入 **基地面積**、**總樓地板面積** 及 **樓層數** (>0)。")
-    st.info("系統已重置為穩定模式，輸入數值後即可開始計算。")
-    st.stop() # 停止執行
-
-# === 運算邏輯 ===
-
+# Risk Assessment Logic
 risk_reasons = []
 suggested_days = 0
 
+# [Logic Update] Depth Check
 if manual_excav_depth_m > 0:
     check_depth = manual_excav_depth_m
 elif is_complex_excavation:
@@ -391,6 +385,7 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
+# --- 5. 核心運算邏輯 ---
 base_area_factor = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
 vol_factor = 1.0
 if total_fa_ping > 3000:
@@ -408,17 +403,20 @@ k_usage = k_usage_base * multi_building_factor
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
+# [v6.59] 使用組合係數
 excav_multiplier = excavation_map_val
 
 aux_wall_factor = 0
 if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20
 if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10
 
-if prep_type_select and "自訂" in prep_type_select and prep_days_custom is not None:
+# [A] 工項天數計算
+if "自訂" in prep_type_select and prep_days_custom is not None:
     d_prep_base = int(prep_days_custom)
 else:
     d_prep_base = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
 
+add_review_days = manual_review_days_input if enable_manual_review else 0
 d_prep = d_prep_base + add_review_days
 
 # Demo Logic
@@ -430,7 +428,7 @@ setup_note = ""
 if "純空地" in site_condition:
     d_demo = 0
     demo_note = "純空地"
-elif is_deep_demo or ("有舊建物" in site_condition):
+elif is_deep_demo or "有舊建物" in site_condition:
     if "無地下室" in site_condition:
         d_demo = int(55 * area_multiplier)
         demo_note = "地上拆除"
@@ -471,6 +469,7 @@ d_aux_wall_days = int(60 * aux_wall_factor)
 
 base_retain = 10 
 dw_note = ""
+# 根據 Wall Type 給定標準天數
 if "連續壁" in selected_wall: 
     base_retain = 60
     if d_dw_setup == 0:
@@ -479,12 +478,13 @@ if "連續壁" in selected_wall:
 elif "全套管" in selected_wall: base_retain = 50
 elif "預壘樁" in selected_wall: base_retain = 40
 elif "鋼板樁" in selected_wall: base_retain = 25
-else: base_retain = 15
+else: base_retain = 15 # 無/明挖 (整地)
 
 d_plunge_col = 0
 if "逆打" in b_method:
     d_plunge_col = int(45 * area_multiplier) 
 
+# [Manual Override Logic]
 if manual_retain_days > 0:
     d_retain_work = manual_retain_days
     dw_note = "依廠商預估"
@@ -492,13 +492,17 @@ if manual_retain_days > 0:
 else:
     d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
 
+# [Calculation Logic Update] 
+# d_excav_std uses 'floors_down' which is now Weighted Average if complex mode is on
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
 
 if enable_soil_limit and daily_soil_limit:
+    # Use real soil volume for calculation
     if is_complex_excavation:
-        total_soil_m3_final = complex_soil_vol * 1.25 
+        total_soil_m3_final = complex_soil_vol * 1.25 # 1.25 loose factor
     else:
+        # Standard calc
         depth_calc = check_depth
         total_soil_m3_final = base_area_m2 * depth_calc * 1.25
 
@@ -517,6 +521,7 @@ elif "斜坡" in selected_support or "無" in selected_wall:
     d_strut_install = 0
     d_earth_work = d_excav_phase
 else:
+    # 一般內支撐或地錨需安裝時間
     d_strut_install = d_excav_phase
     d_earth_work = d_excav_phase
 
@@ -541,6 +546,7 @@ else: struct_note_base = f"38天/層"
 
 d_struct_body = int(calc_floors_struct * struct_map_above.get(struct_above, 28) * area_multiplier * k_usage)
 
+# 外牆 15天/層
 d_ext_wall = int(calc_floors_struct * 15 * area_multiplier * ext_wall_multiplier * k_usage)
 
 if "機電管線工程" in scope_options:
@@ -548,6 +554,7 @@ if "機電管線工程" in scope_options:
 else: d_mep = 0
 
 if "室內裝修工程" in scope_options:
+    # 裝修工程 10天/層
     d_fit_out = int((60 + calc_floors_struct * 10) * area_multiplier * k_usage)
 else: d_fit_out = 0
 
@@ -577,6 +584,7 @@ if manual_crane_days > 0:
 if not needs_tower_crane:
     d_tower_crane = 0
 
+# [B] 日期推算
 def get_end_date(start_date, days_needed):
     curr = start_date
     if days_needed <= 0: return curr 
@@ -589,6 +597,7 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
+# [C] CPM 排程
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 p2_s = p1_e + timedelta(days=1)
@@ -596,16 +605,20 @@ p2_e = get_end_date(p2_s, d_demo)
 p_soil_s = p2_e + timedelta(days=1)
 p_soil_e = get_end_date(p_soil_s, d_soil)
 
+# 4. 擋土壁
 p4_s = p_soil_e + timedelta(days=1)
 p4_e = get_end_date(p4_s, d_retain_work)
 
+# 5. 擋土支撐
 p5_s = p4_e + timedelta(days=1)
 p5_e = get_end_date(p5_s, d_strut_install)
 
+# 6. 土方開挖
 p6_s = p5_s 
 p6_e = get_end_date(p6_s, d_earth_work)
 p_excav_finish = max(p5_e, p6_e)
 
+# 7. 地下結構
 if "逆打" in b_method or "雙順打" in b_method:
     lag_excav = int(30 * area_multiplier)
     p7_s = get_end_date(p6_s, lag_excav)
@@ -638,17 +651,21 @@ lag_ext = int(d_struct_body * 0.5)
 p_ext_s = get_end_date(p8_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
 
+# 10. 機電
 lag_mep = int(d_struct_body * 0.3) 
 p10_s = get_end_date(p8_s, lag_mep)
 p10_e = get_end_date(p10_s, d_mep)
 
+# 11. 裝修
 lag_fit_out = int(d_struct_body * 0.6)
 p11_s = get_end_date(p8_s, lag_fit_out)
 p11_e = get_end_date(p11_s, d_fit_out)
 
+# 12. 景觀
 p12_s = p_ext_e - timedelta(days=15) 
 p12_e = get_end_date(p12_s, d_landscape)
 
+# 13. 驗收
 p13_s = max(p_ext_e, p10_e, p11_e, p12_e) - timedelta(days=30)
 p13_e = get_end_date(p13_s, d_insp)
 
