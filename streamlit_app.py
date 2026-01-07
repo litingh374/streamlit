@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.67", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.68", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,7 +38,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.67")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.68")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # --- 4. 一般參數輸入區 ---
@@ -55,9 +55,9 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         struct_above = st.selectbox("地上結構", ["RC造", "SRC造", "SS造", "SC造"], index=None, placeholder="請選擇...")
         struct_below = st.selectbox("地下結構", ["RC造", "SRC造"], index=None, placeholder="請選擇...")
     with c3:
-        # [v6.67 新增] 樓版型式選擇
+        # 樓版型式選擇
         st.write("###### 樓版工法")
-        slab_type = st.radio("樓版型式", ["一般 RC 樓版", "鋼承板 (Deck)"], index=0, help="選擇 Deck 版將以 15天/層 估算結構工期")
+        slab_type = st.radio("樓版型式", ["一般 RC 樓版", "鋼承板 (Deck)"], index=0, help="Deck 版工期較短，業界標準約 10-12 天/層")
     with c4:
         st.empty() # 佔位
 
@@ -92,7 +92,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     daily_soil_limit = 300
 
     # [模式邏輯] 集合住宅 vs 單棟
-    if "集合住宅" in str(b_type):
+    if b_type and "集合住宅" in b_type:
         st.markdown("##### 🏙️ 集合住宅 - 各棟樓層配置")
         t_col1, t_col2 = st.columns([1, 2])
         with t_col1:
@@ -149,7 +149,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         building_count = 1
 
     # === 共用的地下室設定邏輯 ===
-    if "集合住宅" in str(b_type):
+    if b_type and "集合住宅" in b_type:
         is_complex_excavation = st.checkbox("啟用分區開挖深度設定 (深淺不一)", value=False, key="complex_toggle_multi")
         if not is_complex_excavation:
             floors_down = st.number_input("地下層數 (B)", min_value=0.0, value=0.0, step=0.5, key="fd_multi")
@@ -242,11 +242,11 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         if enable_manual_review:
             manual_review_days_input = st.number_input("輸入緩衝天數", min_value=0, value=90, step=30, label_visibility="collapsed")
 
-    # === [Section 4] 大地與基礎工程 ===
+    # === [Section 4] 大地與基礎工程 (組合式工法) ===
     st.markdown("<div class='section-header'>4. 大地工程與基礎 (組合式工法)</div>", unsafe_allow_html=True)
     g1, g2, g3 = st.columns(3)
     
-    # 預先初始化
+    # 初始化避免報錯
     selected_wall = None
     selected_support = None
     excavation_map_val = 1.0 
@@ -337,7 +337,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [Core Logic Fix v6.67] 變數初始化 (最重要的一步)
+# [v6.68] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -449,9 +449,8 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-# 結構工期計算邏輯 (v6.67 Updated)
+# 結構工期計算邏輯 (v6.68 Updated: Deck = 12 days)
 # ----------------------------------------------------
-# 1. 定義標準工期對照表 (天/層)
 struct_map_above = {
     "RC造": 28, 
     "SRC造": 25, 
@@ -459,18 +458,16 @@ struct_map_above = {
     "SC造": 22 
 }
 
-# 2. 判斷是否為 Deck 版
 if slab_type == "鋼承板 (Deck)":
-    base_days_per_floor = 15  # 使用者指定 Deck 版工期
+    base_days_per_floor = 12  # [修正] 業界標準約 10-12 天
 else:
-    base_days_per_floor = struct_map_above.get(struct_above, 28) # 預設 RC 28天
+    base_days_per_floor = struct_map_above.get(struct_above, 28)
 
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 multi_building_factor = 1.0
 if "集合住宅" in b_type and building_count > 1:
     multi_building_factor = 1.0 + (building_count - 1) * 0.03
 k_usage = k_usage_base * multi_building_factor
-
 ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
@@ -485,9 +482,9 @@ if prep_type_select and "自訂" in prep_type_select and prep_days_custom is not
 else:
     d_prep_base = 120 if "一般" in prep_type_select else 210 if "鄰捷運" in prep_type_select else 300
 
-add_review_days = manual_review_days_input if enable_manual_review else 0
 d_prep = d_prep_base + add_review_days
 
+# Demo Logic
 if site_condition and "純空地" in site_condition:
     d_demo = 0
     demo_note = "純空地"
@@ -600,7 +597,6 @@ if d_strut_removal > 0: struct_note_base = f"38天/層 + 拆撐{days_per_strut_r
 elif b_method and "逆打" in b_method: struct_note_base = f"38天/層 x 1.2(逆打係數)"
 else: struct_note_base = f"38天/層"
 
-# [v6.67 Update] 使用正確的 base_days_per_floor
 d_struct_body = int(calc_floors_struct * base_days_per_floor * area_multiplier * k_usage)
 
 d_ext_wall = int(calc_floors_struct * 15 * area_multiplier * ext_wall_multiplier * k_usage)
@@ -639,7 +635,6 @@ if manual_crane_days > 0:
 if not needs_tower_crane:
     d_tower_crane = 0
 
-# [B] 日期推算
 def get_end_date(start_date, days_needed):
     curr = start_date
     if days_needed <= 0: return curr 
@@ -652,7 +647,6 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
-# [C] CPM 排程
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 p2_s = p1_e + timedelta(days=1)
@@ -754,6 +748,9 @@ if add_review_days > 0:
     prep_note = f"含危評審查 (+{add_review_days}天)"
 else:
     prep_note = "要徑"
+
+strut_note = "開挖併行"
+if b_method and "逆打" in b_method: strut_note = "樓板支撐(免架設)"
 
 schedule_data = [
     {"工項階段": "1. 規劃與前期作業", "需用工作天": d_prep, "Start": p1_s, "Finish": p1_e, "備註": prep_note},
