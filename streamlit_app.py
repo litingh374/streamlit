@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.68", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.71", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,7 +38,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.68")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.71")
+st.caption("參數更新：依據 2026/01 專家回饋修正 (v6.71)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # --- 4. 一般參數輸入區 ---
@@ -57,7 +58,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     with c3:
         # 樓版型式選擇
         st.write("###### 樓版工法")
-        slab_type = st.radio("樓版型式", ["一般 RC 樓版", "鋼承板 (Deck)"], index=0, help="Deck 版工期較短，業界標準約 10-12 天/層")
+        slab_type = st.radio("樓版型式", ["一般 RC 樓版", "鋼承板 (Deck)"], index=0, help="Deck 版工期較短，業界標準約 15 天/層")
     with c4:
         st.empty() # 佔位
 
@@ -274,8 +275,9 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             "連續壁 (Diaphragm Wall)": 1.0, "全套管切削樁 (All-Casing)": 0.95,
             "預壘樁/排樁 (PIP/Soldier Pile)": 0.85, "鋼板樁 (Sheet Pile)": 0.70, "無 (純明挖/放坡)": 0.50
         }
+        # v6.71 Update: Anchor reduced to 0.8
         support_factors = {
-            "型鋼內支撐 (Strut)": 1.0, "地錨 (Anchor)": 0.9, "結構樓板 (逆打標準)": 1.0,
+            "型鋼內支撐 (Strut)": 1.0, "地錨 (Anchor)": 0.8, "結構樓板 (逆打標準)": 1.0,
             "島式工法 (Island Method)": 1.25, "斜坡/明挖 (Slope/Open Cut)": 0.6
         }
         
@@ -337,7 +339,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.68] 變數初始化 (必備)
+# [v6.71] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -449,26 +451,36 @@ if total_fa_ping > 3000:
     vol_factor = min(vol_factor, 1.2)
 area_multiplier = base_area_factor * vol_factor
 
-# 結構工期計算邏輯 (v6.68 Updated: Deck = 12 days)
+# 結構工期計算邏輯 (v6.71 Updated)
 # ----------------------------------------------------
 struct_map_above = {
     "RC造": 28, 
     "SRC造": 25, 
-    "SS造": 20,  
-    "SC造": 22 
+    "SS造": 18, # Modified: Reduced from 20 based on feedback (w/ deck approx 15)
+    "SC造": 21  # Modified: Reduced from 22
 }
 
 if slab_type == "鋼承板 (Deck)":
-    base_days_per_floor = 12  # [修正] 業界標準約 10-12 天
+    base_days_per_floor = 15  # Modified: Increased from 12 based on feedback
 else:
     base_days_per_floor = struct_map_above.get(struct_above, 28)
 
-k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.3, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
+# Usage factor update: Dept Store 1.3 -> 1.1
+k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.1, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
+
 multi_building_factor = 1.0
 if "集合住宅" in b_type and building_count > 1:
     multi_building_factor = 1.0 + (building_count - 1) * 0.03
 k_usage = k_usage_base * multi_building_factor
-ext_wall_map = {"標準磁磚/塗料": 1.0, "石材吊掛 (工期較長)": 1.15, "玻璃帷幕 (工期較短)": 0.85, "預鑄PC板": 0.95, "金屬三明治板 (極快)": 0.6}
+
+# Exterior Wall Map (v6.71 Major Update)
+ext_wall_map = {
+    "標準磁磚/塗料": 1.3,        # Was 1.0, Slower than stone (rendering time)
+    "石材吊掛 (工期較長)": 1.1,   # Was 1.15, Faster than tile
+    "玻璃帷幕 (工期較短)": 0.8,   # Was 0.85, Approx 12 days
+    "預鑄PC板": 0.85,          # Was 0.95, Close to glass
+    "金屬三明治板 (極快)": 0.85   # Was 0.6, High rise needs scaffolding/hanging
+}
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
 excav_multiplier = excavation_map_val
@@ -476,6 +488,8 @@ excav_multiplier = excavation_map_val
 aux_wall_factor = 0
 if "地中壁" in str(rw_aux_options): aux_wall_factor += 0.20
 if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10
+
+add_review_days = manual_review_days_input if enable_manual_review else 0
 
 if prep_type_select and "自訂" in prep_type_select and prep_days_custom is not None:
     d_prep_base = int(prep_days_custom)
@@ -578,7 +592,8 @@ else:
     d_strut_install = d_excav_phase
     d_earth_work = d_excav_phase
 
-days_per_floor_bd = 38
+# v6.71 Update: Basement days per floor increased
+days_per_floor_bd = 45 # Was 38
 days_per_strut_remove = 10
 
 if (selected_support and "斜坡" in selected_support) or (selected_wall and "無" in selected_wall) or (b_method and "逆打" in b_method):
@@ -588,21 +603,22 @@ else:
 
 struct_efficiency_factor = 1.0
 if b_method and "逆打" in b_method:
-    struct_efficiency_factor = 1.2 
+    struct_efficiency_factor = 1.3 # v6.71 Update: Was 1.2, increased for slower reverse build
 
 d_struct_below_raw = ((floors_down * days_per_floor_bd * struct_efficiency_factor) + d_strut_removal + foundation_add)
 d_struct_below = int(d_struct_below_raw * area_multiplier)
 
-if d_strut_removal > 0: struct_note_base = f"38天/層 + 拆撐{days_per_strut_remove}天"
-elif b_method and "逆打" in b_method: struct_note_base = f"38天/層 x 1.2(逆打係數)"
-else: struct_note_base = f"38天/層"
+if d_strut_removal > 0: struct_note_base = f"{days_per_floor_bd}天/層 + 拆撐{days_per_strut_remove}天"
+elif b_method and "逆打" in b_method: struct_note_base = f"{days_per_floor_bd}天/層 x 1.3(逆打係數)"
+else: struct_note_base = f"{days_per_floor_bd}天/層"
 
 d_struct_body = int(calc_floors_struct * base_days_per_floor * area_multiplier * k_usage)
 
 d_ext_wall = int(calc_floors_struct * 15 * area_multiplier * ext_wall_multiplier * k_usage)
 
+# v6.71 Update: MEP reduced to 2 days/floor (was 4)
 if "機電管線工程" in scope_options:
-    d_mep = int((60 + calc_floors_struct * 4) * area_multiplier * k_usage)
+    d_mep = int((60 + calc_floors_struct * 2) * area_multiplier * k_usage)
 else: d_mep = 0
 
 if "室內裝修工程" in scope_options:
@@ -626,11 +642,14 @@ crane_note = "含勞檢危險性機械檢查"
 if (struct_above and struct_above in ["SS造", "SC造", "SRC造"]) or display_max_floor >= 15:
     needs_tower_crane = True
 
-d_tower_crane = 40
+# v6.71 Update: Tower Crane 40 -> 60
+d_tower_crane = 60
 if manual_crane_days > 0:
     d_tower_crane = manual_crane_days
     needs_tower_crane = True 
     crane_note = "依廠商預估"
+else:
+    crane_note = "安裝12天+安檢45天"
 
 if not needs_tower_crane:
     d_tower_crane = 0
@@ -910,6 +929,6 @@ excel_data = buffer.getvalue()
 st.download_button(
     label="📊 下載專業版 Excel 報表",
     data=excel_data,
-    file_name=f"{project_name}_工期分析.xlsx",
+    file_name=f"{project_name}_工期分析_v6.71.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
