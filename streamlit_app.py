@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.72", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.73", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.72")
-st.caption("參數更新：外牆進場時機調整為結構體 70% (v6.72)")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.73")
+st.caption("參數更新：修正逆打工法土方開挖邏輯，採逐層連動 (v6.73)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # --- 4. 一般參數輸入區 ---
@@ -275,7 +275,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             "連續壁 (Diaphragm Wall)": 1.0, "全套管切削樁 (All-Casing)": 0.95,
             "預壘樁/排樁 (PIP/Soldier Pile)": 0.85, "鋼板樁 (Sheet Pile)": 0.70, "無 (純明挖/放坡)": 0.50
         }
-        # v6.71 Update: Anchor reduced to 0.8
+        
         support_factors = {
             "型鋼內支撐 (Strut)": 1.0, "地錨 (Anchor)": 0.8, "結構樓板 (逆打標準)": 1.0,
             "島式工法 (Island Method)": 1.25, "斜坡/明挖 (Slope/Open Cut)": 0.6
@@ -339,7 +339,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.72] 變數初始化 (必備)
+# [v6.73] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -456,16 +456,15 @@ area_multiplier = base_area_factor * vol_factor
 struct_map_above = {
     "RC造": 28, 
     "SRC造": 25, 
-    "SS造": 18, # Modified: Reduced from 20 based on feedback (w/ deck approx 15)
-    "SC造": 21  # Modified: Reduced from 22
+    "SS造": 18, 
+    "SC造": 21
 }
 
 if slab_type == "鋼承板 (Deck)":
-    base_days_per_floor = 15  # Modified: Increased from 12 based on feedback
+    base_days_per_floor = 15  
 else:
     base_days_per_floor = struct_map_above.get(struct_above, 28)
 
-# Usage factor update: Dept Store 1.3 -> 1.1
 k_usage_base = {"住宅": 1.0, "集合住宅 (多棟)": 1.0, "辦公大樓": 1.1, "飯店": 1.4, "百貨": 1.1, "廠房": 0.8, "醫院": 1.4}.get(b_type, 1.0)
 
 multi_building_factor = 1.0
@@ -473,13 +472,12 @@ if "集合住宅" in b_type and building_count > 1:
     multi_building_factor = 1.0 + (building_count - 1) * 0.03
 k_usage = k_usage_base * multi_building_factor
 
-# Exterior Wall Map (v6.71 Major Update)
 ext_wall_map = {
-    "標準磁磚/塗料": 1.3,        # Was 1.0, Slower than stone (rendering time)
-    "石材吊掛 (工期較長)": 1.1,   # Was 1.15, Faster than tile
-    "玻璃帷幕 (工期較短)": 0.8,   # Was 0.85, Approx 12 days
-    "預鑄PC板": 0.85,          # Was 0.95, Close to glass
-    "金屬三明治板 (極快)": 0.85   # Was 0.6, High rise needs scaffolding/hanging
+    "標準磁磚/塗料": 1.3,        
+    "石材吊掛 (工期較長)": 1.1,   
+    "玻璃帷幕 (工期較短)": 0.8,   
+    "預鑄PC板": 0.85,          
+    "金屬三明治板 (極快)": 0.85   
 }
 ext_wall_multiplier = ext_wall_map.get(ext_wall, 1.0)
 
@@ -564,6 +562,7 @@ if manual_retain_days > 0:
 else:
     d_retain_work = int((base_retain * area_multiplier) + d_dw_setup + d_aux_wall_days + d_plunge_col)
 
+# --- Excavation & Struct Days Calculation ---
 d_excav_std = int((floors_down * 22 * excav_multiplier) * area_multiplier) 
 excav_note = "出土/支撐"
 
@@ -592,8 +591,7 @@ else:
     d_strut_install = d_excav_phase
     d_earth_work = d_excav_phase
 
-# v6.71 Update: Basement days per floor increased
-days_per_floor_bd = 45 # Was 38
+days_per_floor_bd = 45 
 days_per_strut_remove = 10
 
 if (selected_support and "斜坡" in selected_support) or (selected_wall and "無" in selected_wall) or (b_method and "逆打" in b_method):
@@ -603,7 +601,7 @@ else:
 
 struct_efficiency_factor = 1.0
 if b_method and "逆打" in b_method:
-    struct_efficiency_factor = 1.3 # v6.71 Update: Was 1.2, increased for slower reverse build
+    struct_efficiency_factor = 1.3 
 
 d_struct_below_raw = ((floors_down * days_per_floor_bd * struct_efficiency_factor) + d_strut_removal + foundation_add)
 d_struct_below = int(d_struct_below_raw * area_multiplier)
@@ -616,7 +614,6 @@ d_struct_body = int(calc_floors_struct * base_days_per_floor * area_multiplier *
 
 d_ext_wall = int(calc_floors_struct * 15 * area_multiplier * ext_wall_multiplier * k_usage)
 
-# v6.71 Update: MEP reduced to 2 days/floor (was 4)
 if "機電管線工程" in scope_options:
     d_mep = int((60 + calc_floors_struct * 2) * area_multiplier * k_usage)
 else: d_mep = 0
@@ -642,7 +639,6 @@ crane_note = "含勞檢危險性機械檢查"
 if (struct_above and struct_above in ["SS造", "SC造", "SRC造"]) or display_max_floor >= 15:
     needs_tower_crane = True
 
-# v6.71 Update: Tower Crane 40 -> 60
 d_tower_crane = 60
 if manual_crane_days > 0:
     d_tower_crane = manual_crane_days
@@ -666,6 +662,7 @@ def get_end_date(start_date, days_needed):
         added += 1
     return curr
 
+# --- Timeline Logic ---
 p1_s = start_date_val
 p1_e = get_end_date(p1_s, d_prep)
 p2_s = p1_e + timedelta(days=1)
@@ -680,19 +677,43 @@ p5_s = p4_e + timedelta(days=1)
 p5_e = get_end_date(p5_s, d_strut_install)
 
 p6_s = p5_s 
-p6_e = get_end_date(p6_s, d_earth_work)
-p_excav_finish = max(p5_e, p6_e)
-
+# [v6.73] Logic Fix for Reverse Construction
 if b_method and ("逆打" in b_method or "雙順打" in b_method):
+    # For Reverse: Excavation runs parallel with structure
+    # 1. Structure Start
     lag_excav = int(30 * area_multiplier)
     p7_s = get_end_date(p6_s, lag_excav)
     p7_e = get_end_date(p7_s, d_struct_below)
+    
+    # 2. Force Excavation End to be close to Structure End
+    # (Excavation must continue until the last floor is reached)
+    target_excav_end = p7_e - timedelta(days=20) 
+    
+    # 3. Calculate "Standard" excav end
+    std_excav_end = get_end_date(p6_s, d_earth_work)
+    
+    # 4. Take the later date (usually the structure-driven date)
+    p6_e = max(target_excav_end, std_excav_end)
+    
+    # 5. Update d_earth_work for display
+    # We estimate days based on calendar diff to avoid complex holiday reverse-calc
+    cal_diff = (p6_e - p6_s).days
+    avg_ratio = 5/7 if exclude_sat and exclude_sun else 6/7 if exclude_sun else 1.0
+    d_earth_work = int(cal_diff * avg_ratio)
+    excav_note = "配合逆打逐層施作"
+    
+    p_excav_finish = p6_e
     
     lag_1f_slab = int(60 * area_multiplier)
     p8_s_pre = get_end_date(p6_s, lag_1f_slab) 
     struct_note_below = f"併行 ({struct_note_base})"
     struct_note_above = f"併行 ({display_max_floor}F+{display_max_roof}R)"
+
 else:
+    # Standard Method
+    p6_e = get_end_date(p6_s, d_earth_work)
+    p_excav_finish = max(p5_e, p6_e)
+    
     p7_s = p_excav_finish + timedelta(days=1)
     p7_e = get_end_date(p7_s, d_struct_below)
     
@@ -712,8 +733,6 @@ else:
 
 p8_e = get_end_date(p8_s, d_struct_body)
 
-# [v6.72 Modification]
-# Change lag from 0.5 to 0.7
 lag_ext = int(d_struct_body * 0.7) 
 p_ext_s = get_end_date(p8_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
@@ -932,6 +951,6 @@ excel_data = buffer.getvalue()
 st.download_button(
     label="📊 下載專業版 Excel 報表",
     data=excel_data,
-    file_name=f"{project_name}_工期分析_v6.72.xlsx",
+    file_name=f"{project_name}_工期分析_v6.73.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
