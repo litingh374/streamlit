@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.73", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.74", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.73")
-st.caption("參數更新：修正逆打工法土方開挖邏輯，採逐層連動 (v6.73)")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.74")
+st.caption("參數更新：室內裝修完工日鎖定於外牆完工後 3 個月 (v6.74)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # --- 4. 一般參數輸入區 ---
@@ -339,7 +339,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.73] 變數初始化 (必備)
+# [v6.74] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -650,6 +650,7 @@ else:
 if not needs_tower_crane:
     d_tower_crane = 0
 
+# --- Helper Functions ---
 def get_end_date(start_date, days_needed):
     curr = start_date
     if days_needed <= 0: return curr 
@@ -660,6 +661,23 @@ def get_end_date(start_date, days_needed):
         if exclude_sun and curr.weekday() == 6: continue
         if exclude_cny and curr.month == 2 and 1 <= curr.day <= 7: continue
         added += 1
+    return curr
+
+# [v6.74] New Helper: Backwards Calculation
+def get_start_date_from_end(end_date, days_needed):
+    curr = end_date
+    if days_needed <= 0: return curr
+    subtracted = 0
+    while subtracted < days_needed:
+        curr -= timedelta(days=1)
+        # Check if the day we moved back to is a work day
+        is_work_day = True
+        if exclude_sat and curr.weekday() == 5: is_work_day = False
+        elif exclude_sun and curr.weekday() == 6: is_work_day = False
+        elif exclude_cny and curr.month == 2 and 1 <= curr.day <= 7: is_work_day = False
+        
+        if is_work_day:
+            subtracted += 1
     return curr
 
 # --- Timeline Logic ---
@@ -679,29 +697,16 @@ p5_e = get_end_date(p5_s, d_strut_install)
 p6_s = p5_s 
 # [v6.73] Logic Fix for Reverse Construction
 if b_method and ("逆打" in b_method or "雙順打" in b_method):
-    # For Reverse: Excavation runs parallel with structure
-    # 1. Structure Start
     lag_excav = int(30 * area_multiplier)
     p7_s = get_end_date(p6_s, lag_excav)
     p7_e = get_end_date(p7_s, d_struct_below)
-    
-    # 2. Force Excavation End to be close to Structure End
-    # (Excavation must continue until the last floor is reached)
     target_excav_end = p7_e - timedelta(days=20) 
-    
-    # 3. Calculate "Standard" excav end
     std_excav_end = get_end_date(p6_s, d_earth_work)
-    
-    # 4. Take the later date (usually the structure-driven date)
     p6_e = max(target_excav_end, std_excav_end)
-    
-    # 5. Update d_earth_work for display
-    # We estimate days based on calendar diff to avoid complex holiday reverse-calc
     cal_diff = (p6_e - p6_s).days
     avg_ratio = 5/7 if exclude_sat and exclude_sun else 6/7 if exclude_sun else 1.0
     d_earth_work = int(cal_diff * avg_ratio)
     excav_note = "配合逆打逐層施作"
-    
     p_excav_finish = p6_e
     
     lag_1f_slab = int(60 * area_multiplier)
@@ -713,10 +718,8 @@ else:
     # Standard Method
     p6_e = get_end_date(p6_s, d_earth_work)
     p_excav_finish = max(p5_e, p6_e)
-    
     p7_s = p_excav_finish + timedelta(days=1)
     p7_e = get_end_date(p7_s, d_struct_below)
-    
     p8_s_pre = p7_e + timedelta(days=1)
     struct_note_below = f"要徑 ({struct_note_base})"
     struct_note_above = f"順打 ({display_max_floor}F+{display_max_roof}R)"
@@ -741,9 +744,11 @@ lag_mep = int(d_struct_body * 0.3)
 p10_s = get_end_date(p8_s, lag_mep)
 p10_e = get_end_date(p10_s, d_mep)
 
-lag_fit_out = int(d_struct_body * 0.6)
-p11_s = get_end_date(p8_s, lag_fit_out)
-p11_e = get_end_date(p11_s, d_fit_out)
+# [v6.74] Fit-out Logic: Finish-to-Finish Constraint
+# Fit-out finishes 90 days after Exterior Wall
+p11_e = p_ext_e + timedelta(days=90) # 3 months calendar days
+p11_s = get_start_date_from_end(p11_e, d_fit_out) # Back-calculate start
+fit_out_note = "配合外牆後3個月完成"
 
 p12_s = p_ext_e - timedelta(days=15) 
 p12_e = get_end_date(p12_s, d_landscape)
@@ -816,7 +821,7 @@ schedule_data.extend([
     {"工項階段": "8. 地上主體結構", "需用工作天": d_struct_body, "Start": p8_s, "Finish": p8_e, "備註": struct_note_above},
     {"工項階段": "9. 建物外牆工程", "需用工作天": d_ext_wall, "Start": p_ext_s, "Finish": p_ext_e, "備註": "併行"},
     {"工項階段": "10. 機電管線工程", "需用工作天": d_mep, "Start": p10_s, "Finish": p10_e, "備註": "併行 (選配)"},
-    {"工項階段": "11. 室內裝修工程", "需用工作天": d_fit_out, "Start": p11_s, "Finish": p11_e, "備註": "併行 (選配)"},
+    {"工項階段": "11. 室內裝修工程", "需用工作天": d_fit_out, "Start": p11_s, "Finish": p11_e, "備註": fit_out_note},
     {"工項階段": "12. 景觀工程", "需用工作天": d_landscape, "Start": p12_s, "Finish": p12_e, "備註": "併行 (選配)"},
     {"工項階段": "13. 驗收取得使照", "需用工作天": d_insp, "Start": p13_s, "Finish": p13_e, "備註": insp_note},
 ])
@@ -951,6 +956,6 @@ excel_data = buffer.getvalue()
 st.download_button(
     label="📊 下載專業版 Excel 報表",
     data=excel_data,
-    file_name=f"{project_name}_工期分析_v6.73.xlsx",
+    file_name=f"{project_name}_工期分析_v6.74.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
