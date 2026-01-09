@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.71", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.72", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.71")
-st.caption("參數更新：依據 2026/01 專家回饋修正 (v6.71)")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.72")
+st.caption("參數更新：外牆進場時機調整為結構體 70% (v6.72)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # --- 4. 一般參數輸入區 ---
@@ -339,7 +339,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.71] 變數初始化 (必備)
+# [v6.72] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -711,7 +711,10 @@ else:
     p8_s = p8_s_pre
 
 p8_e = get_end_date(p8_s, d_struct_body)
-lag_ext = int(d_struct_body * 0.5)
+
+# [v6.72 Modification]
+# Change lag from 0.5 to 0.7
+lag_ext = int(d_struct_body * 0.7) 
 p_ext_s = get_end_date(p8_s, lag_ext)
 p_ext_e = get_end_date(p_ext_s, d_ext_wall)
 
@@ -929,6 +932,6 @@ excel_data = buffer.getvalue()
 st.download_button(
     label="📊 下載專業版 Excel 報表",
     data=excel_data,
-    file_name=f"{project_name}_工期分析_v6.71.xlsx",
+    file_name=f"{project_name}_工期分析_v6.72.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
