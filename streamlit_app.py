@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.77", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.78", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,9 +38,14 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.77")
-st.caption("參數更新：主系統連續壁工期強制納入 1.75 倍實務係數 (v6.77)")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.78")
+st.caption("修正：連續壁調整係數變數順序錯誤 (v6.78)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
+
+# ==========================================
+# [v6.78 修正] 全域變數定義 (防止 NameError)
+# ==========================================
+dw_reality_factor = 1.75  # 連續壁實務調整係數
 
 # --- 4. 一般參數輸入區 ---
 st.subheader("📋 建築規模參數")
@@ -206,6 +211,43 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
     with dim_c6:
         manual_roof_height_m = st.number_input(f"屋突高度 (m)", value=0.0, step=0.1)
 
+    # === [Section 3] 基地現況與前置 ===
+    st.markdown("<div class='section-header'>3. 基地現況與前置作業</div>", unsafe_allow_html=True)
+    s1, s2, s3 = st.columns(3)
+    
+    with s1:
+        site_condition = st.selectbox("基地現況", ["純空地 (無須拆除)", "有舊建物 (無地下室)", "有舊建物 (含舊地下室)", "僅存舊地下室 (需回填/破除)"], index=None, placeholder="請選擇...")
+        
+        is_deep_demo = site_condition and "舊地下室" in site_condition
+        obstruction_method = "一般怪手破除"
+        backfill_method = "回填舊地下室 (標準)"
+        deep_gw_seq = "無"
+        obs_strategy = "無"
+        
+        if is_deep_demo:
+            st.caption("⬇️ **舊地下室處理策略**")
+            backfill_method = st.radio("施工平台建置", ["回填舊地下室 (標準)", "不回填 (架設施工構台)"], horizontal=True)
+            obstruction_method = st.selectbox("地中障礙清障方式", ["一般怪手破除", "深導溝 (Deep Guide Wall)", "全套管切削 (All-Casing)"], index=None, placeholder="請選擇...")
+            obs_strategy = obstruction_method
+            
+            if obstruction_method and "深導溝" in obstruction_method:
+                deep_gw_seq = st.selectbox("深導溝施作順序", ["先回填後施作 (標準)", "邊回填邊施作 (重疊)"], index=None, placeholder="請選擇...")
+
+    with s2:
+        soil_improvement = st.selectbox("地質改良", ["無", "局部改良 (JSP/CCP)", "全區改良"], index=None, placeholder="請選擇...")
+        
+    with s3:
+        prep_type_select = st.selectbox("前置作業類型", ["一般 (120天)", "鄰捷運 (180-240天)", "大型公共工程/環評 (300天+)", "自訂"], index=None, placeholder="請選擇...")
+        if prep_type_select and "自訂" in prep_type_select:
+            prep_days_custom = st.number_input("輸入自訂前置天數", min_value=0, value=120)
+        else:
+            prep_days_custom = None
+        
+        enable_manual_review = st.checkbox("納入危評/外審緩衝期", value=False)
+        manual_review_days_input = 0
+        if enable_manual_review:
+            manual_review_days_input = st.number_input("輸入緩衝天數", min_value=0, value=90, step=30, label_visibility="collapsed")
+
     # === [Section 4] 大地與基礎工程 (組合式工法) ===
     st.markdown("<div class='section-header'>4. 大地工程與基礎 (組合式工法)</div>", unsafe_allow_html=True)
     g1, g2, g3 = st.columns(3)
@@ -278,7 +320,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         st.write("") 
 
     # ==========================================
-    # [v6.77] 連續壁工期詳細試算工具
+    # [v6.78] 連續壁工期詳細試算工具
     # ==========================================
     if selected_wall and "連續壁" in selected_wall:
         with st.expander("🧱 工具：連續壁工期詳細試算 (點擊展開)", expanded=False):
@@ -289,7 +331,6 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             
             with dw_col1:
                 st.markdown("**1. 數量輸入**")
-                # 使用者輸入各項數量 (預設值依照常見數據)
                 qty_pile_temp = st.number_input("擋土假設樁 (M)", value=5750)
                 qty_gw_norm = st.number_input("2.0M 一般導溝 (M)", value=51.3)
                 qty_gw_deep = st.number_input("7.0M 超深導溝 (M)", value=138.1)
@@ -306,13 +347,11 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 qty_mid_wall = st.number_input("地中壁 (單元)", value=7)
                 qty_rect_pile = st.number_input("矩形壁樁 (單元)", value=10)
                 
-                # 自動帶入地下室樓層
                 default_bf = int(floors_down) if floors_down > 0 else 4
                 basement_floors_calc = st.number_input("結構體養護-地下室層數", value=default_bf, min_value=1)
 
             with dw_col2:
                 st.markdown("**2. 工期計算結果**")
-                # 建立資料表邏輯
                 schedule_dw_data = [
                     {"項目": "擋土假設樁", "數量": qty_pile_temp, "單位": "M", "工率": "200 M/天", "工作天": math.ceil(qty_pile_temp/200)},
                     {"項目": "2.0M 一般導溝", "數量": qty_gw_norm, "單位": "M", "工率": "10 M/天", "工作天": math.ceil(qty_gw_norm/10)},
@@ -335,8 +374,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 
                 raw_work_days_dw = df_schedule_dw["工作天"].sum()
                 
-                # [v6.76] 實務調整係數 (Reality Factor)
-                dw_reality_factor = 1.75
+                # [v6.78] 此處可安全讀取已定義的係數
                 adjusted_work_days = math.ceil(raw_work_days_dw * dw_reality_factor)
                 
                 calendar_factor = st.slider("日曆天換算係數 (工作天 x 係數)", 1.0, 1.5, 1.15, 0.01, key="dw_factor")
@@ -377,7 +415,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.77] 變數初始化 (必備)
+# [v6.78] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -580,11 +618,8 @@ d_aux_wall_days = int(60 * aux_wall_factor)
 base_retain = 10 
 dw_note = ""
 
-# [v6.77] 定義連續壁實務調整係數
-dw_reality_factor = 1.75 
-
 if selected_wall and "連續壁" in selected_wall: 
-    # [v6.77] 修正: 套用 1.75 倍係數 (60 * 1.75 = 105)
+    # [v6.78] 修正: 套用 1.75 倍係數 (60 * 1.75 = 105)
     base_retain = int(60 * dw_reality_factor)
     if d_dw_setup == 0:
         d_dw_setup = int(14 * area_multiplier)
@@ -999,6 +1034,6 @@ excel_data = buffer.getvalue()
 st.download_button(
     label="📊 下載專業版 Excel 報表",
     data=excel_data,
-    file_name=f"{project_name}_工期分析_v6.77.xlsx",
+    file_name=f"{project_name}_工期分析_v6.78.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
