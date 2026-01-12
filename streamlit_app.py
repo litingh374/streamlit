@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.75", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.76", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.75")
-st.caption("新增功能：整合連續壁詳細工期試算工具 (v6.75)")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.76")
+st.caption("參數更新：連續壁工期係數上調 1.75 倍 (v6.76)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # --- 4. 一般參數輸入區 ---
@@ -315,7 +315,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         st.write("") 
 
     # ==========================================
-    # [v6.75 新增] 連續壁工期詳細試算工具
+    # [v6.76 新增] 連續壁工期詳細試算工具
     # ==========================================
     if selected_wall and "連續壁" in selected_wall:
         with st.expander("🧱 工具：連續壁工期詳細試算 (點擊展開)", expanded=False):
@@ -370,16 +370,23 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 df_schedule_dw = pd.DataFrame(schedule_dw_data)
                 st.dataframe(df_schedule_dw, use_container_width=True, hide_index=True)
                 
-                total_work_days_dw = df_schedule_dw["工作天"].sum()
+                raw_work_days_dw = df_schedule_dw["工作天"].sum()
+                
+                # [v6.76] 實務調整係數 (Reality Factor)
+                reality_factor = 1.75
+                adjusted_work_days = math.ceil(raw_work_days_dw * reality_factor)
+                
                 calendar_factor = st.slider("日曆天換算係數 (工作天 x 係數)", 1.0, 1.5, 1.15, 0.01, key="dw_factor")
-                total_cal_days_dw = math.ceil(total_work_days_dw * calendar_factor)
+                total_cal_days_dw = math.ceil(adjusted_work_days * calendar_factor)
                 
                 # 養護時間計算
                 curing_1fl = 28
                 curing_bs = basement_floors_calc * 10
                 total_curing = curing_1fl + curing_bs
 
-                st.info(f"📊 **試算結果：連續壁工期約 {total_cal_days_dw} 天** (工作天 {total_work_days_dw} 天)")
+                st.markdown(f"**累計原始工作天**: {raw_work_days_dw} 天")
+                st.markdown(f"**x 實務調整係數 (1.75)**: {adjusted_work_days} 天 (反映夜間/難度/重疊損耗)")
+                st.info(f"📊 **試算結果：連續壁工期約 {total_cal_days_dw} 天**")
                 st.markdown(f"💡 若您希望採用此結果，請將 `{total_cal_days_dw}` 填入下方的 **「廠商工期覆蓋」** > **「擋土壁施作工期」** 欄位中。")
 
     # === [Section 5] 外觀與機電裝修 ===
@@ -407,7 +414,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.75] 變數初始化 (必備)
+# [v6.76] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -610,7 +617,8 @@ d_aux_wall_days = int(60 * aux_wall_factor)
 base_retain = 10 
 dw_note = ""
 if selected_wall and "連續壁" in selected_wall: 
-    base_retain = 60
+    # [v6.76] 修正: 連續壁基礎工期 60 -> 105 (x1.75倍)
+    base_retain = 105
     if d_dw_setup == 0:
         d_dw_setup = int(14 * area_multiplier)
         setup_note = "標準導溝/鋪面"
@@ -1024,6 +1032,6 @@ excel_data = buffer.getvalue()
 st.download_button(
     label="📊 下載專業版 Excel 報表",
     data=excel_data,
-    file_name=f"{project_name}_工期分析_v6.75.xlsx",
+    file_name=f"{project_name}_工期分析_v6.76.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
