@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.78", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.79", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.78")
-st.caption("修正：連續壁調整係數變數順序錯誤 (v6.78)")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.79")
+st.caption("參數更新：移除連續壁係數顯示文字、驗收工期上調至 120 天 (v6.79)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # ==========================================
@@ -320,7 +320,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         st.write("") 
 
     # ==========================================
-    # [v6.78] 連續壁工期詳細試算工具
+    # [v6.79] 連續壁工期詳細試算工具
     # ==========================================
     if selected_wall and "連續壁" in selected_wall:
         with st.expander("🧱 工具：連續壁工期詳細試算 (點擊展開)", expanded=False):
@@ -386,7 +386,9 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 total_curing = curing_1fl + curing_bs
 
                 st.markdown(f"**累計原始工作天**: {raw_work_days_dw} 天")
-                st.markdown(f"**x 實務調整係數 ({dw_reality_factor})**: {adjusted_work_days} 天 (反映夜間/難度/重疊損耗)")
+                # [v6.79] 移除顯示文字
+                # st.markdown(f"**x 實務調整係數 ({dw_reality_factor})**: {adjusted_work_days} 天 (反映夜間/難度/重疊損耗)")
+                
                 st.info(f"📊 **試算結果：連續壁工期約 {total_cal_days_dw} 天**")
                 st.markdown(f"💡 若您希望採用此結果，請將 `{total_cal_days_dw}` 填入下方的 **「廠商工期覆蓋」** > **「擋土壁施作工期」** 欄位中。")
 
@@ -415,7 +417,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.78] 變數初始化 (必備)
+# [v6.79] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
@@ -704,7 +706,8 @@ if "景觀工程" in scope_options:
     d_landscape = int(75 * base_area_factor) 
 else: d_landscape = 0
 
-d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 90
+# [v6.79] Update: Inspection days 90 -> 120
+d_insp_base = 150 if b_type in ["百貨", "醫院", "飯店"] else 120
 if "集合住宅" in b_type: 
     d_insp = d_insp_base + (building_count - 1) * 15
     insp_note = f"多棟聯合驗收 (共{building_count}棟)" 
@@ -1034,6 +1037,6 @@ excel_data = buffer.getvalue()
 st.download_button(
     label="📊 下載專業版 Excel 報表",
     data=excel_data,
-    file_name=f"{project_name}_工期分析_v6.78.xlsx",
+    file_name=f"{project_name}_工期分析_v6.79.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
