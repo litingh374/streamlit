@@ -9,9 +9,59 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.84", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.85", layout="wide")
 
-# --- 2. CSS 樣式 ---
+# ==========================================
+# 🔐 簡易密碼登入功能 (v6.85)
+# ==========================================
+def check_password():
+    """檢查密碼是否正確的函數"""
+    
+    # [設定] 請在此修改您的密碼
+    ACTUAL_PASSWORD = "1234" 
+
+    def password_entered():
+        """檢查輸入的密碼"""
+        if st.session_state["password"] == ACTUAL_PASSWORD:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # 安全起見，刪除輸入框的紀錄
+        else:
+            st.session_state["password_correct"] = False
+
+    # 初始化 session_state
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    # 判斷狀態
+    if not st.session_state["password_correct"]:
+        # 尚未登入，顯示輸入框
+        st.markdown("""
+        <style>
+        .stTextInput > label {font-size:120%; font-weight:bold; color:#2D2926;}
+        .stApp { background-color: #ffffff; } 
+        </style>
+        <div style='text-align: center; margin-top: 50px;'>
+            <h1>🔒 建築工期估算輔助系統</h1>
+            <p>本系統僅限內部授權使用，請輸入密碼登入。</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            st.text_input("請輸入登入密碼", type="password", on_change=password_entered, key="password")
+            if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
+                st.error("❌ 密碼錯誤，請重新輸入")
+            
+        return False
+    else:
+        # 已登入
+        return True
+
+# 執行檢查：如果沒過，就停止執行後續程式碼
+if not check_password():
+    st.stop()
+
+# --- 2. CSS 樣式 (登入後才會載入) ---
 st.markdown("""
     <style>
     :root { --main-yellow: #FFB81C; --accent-orange: #FF4438; --dark-grey: #2D2926; }
@@ -43,18 +93,22 @@ st.markdown("""
 
 # --- 3. 標題與導航 ---
 st.sidebar.title("功能選單")
+if st.sidebar.button("🔒 登出系統"):
+    st.session_state["password_correct"] = False
+    st.rerun()
+
 page_mode = st.sidebar.radio("請選擇模式", ["單案詳細估算", "順打 vs 逆打 比較"], index=0)
 
-st.title(f"🏗️ 建築工期估算 - {page_mode} v6.84")
+st.title(f"🏗️ 建築工期估算 - {page_mode} v6.85")
 if page_mode == "順打 vs 逆打 比較":
     st.caption("說明：此模式將忽略上方「施工方式」選單，自動計算並比較兩種工法的差異。")
 else:
-    st.caption("參數更新：修復甘特圖配色與詳細備註顯示 (v6.84)")
+    st.caption("版本資訊：v6.85 (含密碼保護、參數校正、工具歸零)")
 
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # 全域變數定義
-dw_reality_factor = 1.75
+dw_reality_factor = 1.75  # 連續壁實務調整係數
 
 # --- 4. 一般參數輸入區 (共用) ---
 st.subheader("📋 建築規模參數")
@@ -251,6 +305,8 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             st.markdown("##### 📏 連續壁施作工期詳細估算")
             dw_col1, dw_col2 = st.columns([1, 2])
             with dw_col1:
+                st.markdown("**1. 數量輸入**")
+                # [v6.81] 預設值全部歸零
                 qty_pile_temp = st.number_input("擋土假設樁 (M)", value=0.0)
                 qty_gw_norm = st.number_input("2.0M 一般導溝 (M)", value=0.0)
                 qty_gw_deep = st.number_input("7.0M 超深導溝 (M)", value=0.0)
@@ -259,6 +315,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 qty_pave = st.number_input("鋪面 (M²)", value=0.0)
                 qty_wash = st.number_input("洗車台 (座)", value=0)
                 st.markdown("---")
+                st.caption("壁體單元數量")
                 qty_dw_main = st.number_input("連續壁主體 (單元)", value=0)
                 qty_dw_co = st.number_input("連續壁共構樁 (單元)", value=0)
                 qty_buttress = st.number_input("無筋扶壁 (單元)", value=0)
@@ -267,6 +324,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 default_bf = int(floors_down) if floors_down > 0 else 4
                 basement_floors_calc = st.number_input("結構體養護-地下室層數", value=default_bf, min_value=1)
             with dw_col2:
+                st.markdown("**2. 工期計算結果**")
                 schedule_dw_data = [
                     {"項目": "擋土假設樁", "數量": qty_pile_temp, "單位": "M", "工率": "200 M/天", "工作天": math.ceil(qty_pile_temp/200)},
                     {"項目": "2.0M 一般導溝", "數量": qty_gw_norm, "單位": "M", "工率": "10 M/天", "工作天": math.ceil(qty_gw_norm/10)},
@@ -286,10 +344,17 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                 df_schedule_dw = pd.DataFrame(schedule_dw_data)
                 df_display = df_schedule_dw[df_schedule_dw['數量'] > 0] if not df_schedule_dw[df_schedule_dw['數量'] > 0].empty else pd.DataFrame(columns=["項目", "數量", "單位", "工率", "工作天"])
                 st.dataframe(df_display, use_container_width=True, hide_index=True)
+                
                 raw_work_days_dw = df_schedule_dw["工作天"].sum()
-                adjusted_work_days = raw_work_days_dw 
+                adjusted_work_days = raw_work_days_dw # [v6.80] 修正：不重複加 1.75
+                
                 calendar_factor = st.slider("日曆天換算係數 (工作天 x 係數)", 1.0, 1.5, 1.15, 0.01, key="dw_factor")
                 total_cal_days_dw = math.ceil(adjusted_work_days * calendar_factor)
+                
+                curing_1fl = 28
+                curing_bs = basement_floors_calc * 10
+                total_curing = curing_1fl + curing_bs
+
                 st.markdown(f"**累計純工作天**: {raw_work_days_dw} 天")
                 st.info(f"📊 **試算結果：連續壁工期約 {total_cal_days_dw} 天**")
                 st.markdown(f"💡 若您希望採用此結果，請將 `{total_cal_days_dw}` 填入下方的 **「廠商工期覆蓋」** > **「擋土壁施作工期」** 欄位中。")
@@ -314,19 +379,6 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_retain_days = st.number_input("擋土壁施作工期 (天)", min_value=0, help="覆蓋系統計算")
         with over_c2:
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
-
-st.subheader("📅 日期與排除條件")
-with st.expander("點擊展開/隱藏 日期設定"):
-    date_col1, date_col2 = st.columns([1, 2])
-    with date_col1:
-        enable_date = st.checkbox("啟用開工日期計算", value=True)
-        start_date_val = st.date_input("預計開工日期", datetime.date.today())
-    with date_col2:
-        st.write("**不可施工日修正**")
-        corr_col1, corr_col2, corr_col3 = st.columns(3)
-        with corr_col1: exclude_sat = st.checkbox("排除週六 (不施工)", value=True)
-        with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
-        with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 # ==========================================
 # [v6.83 恢復] 危評/外審 警告判斷邏輯
@@ -527,6 +579,7 @@ def calculate_project_schedule(is_reverse_method):
     fit_out_note = "配合外牆後3個月完成"
     d_landscape = int(75 * base_area_factor) if "景觀工程" in scope_options else 0
     
+    # [v6.79] Update Inspection days
     d_insp = 150 if b_type in ["百貨", "醫院", "飯店"] else 120 
     insp_note = "標準驗收流程"
     if "集合住宅" in str(b_type): 
