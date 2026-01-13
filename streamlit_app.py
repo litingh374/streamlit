@@ -8,7 +8,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.80", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.81", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -38,8 +38,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. 標題與專案名稱 ---
-st.title("🏗️ 建築施工工期估算輔助系統 v6.80")
-st.caption("參數更新：移除試算工具重複加權係數、主系統維持實務參數 (v6.80)")
+st.title("🏗️ 建築施工工期估算輔助系統 v6.81")
+st.caption("參數更新：連續壁試算工具預設值歸零 (v6.81)")
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
 # ==========================================
@@ -320,7 +320,7 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
         st.write("") 
 
     # ==========================================
-    # [v6.80] 連續壁工期詳細試算工具
+    # [v6.81] 連續壁工期詳細試算工具
     # ==========================================
     if selected_wall and "連續壁" in selected_wall:
         with st.expander("🧱 工具：連續壁工期詳細試算 (點擊展開)", expanded=False):
@@ -331,21 +331,22 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
             
             with dw_col1:
                 st.markdown("**1. 數量輸入**")
-                qty_pile_temp = st.number_input("擋土假設樁 (M)", value=5750)
-                qty_gw_norm = st.number_input("2.0M 一般導溝 (M)", value=51.3)
-                qty_gw_deep = st.number_input("7.0M 超深導溝 (M)", value=138.1)
-                qty_gw_pile = st.number_input("壁樁超深導溝 (處)", value=10)
-                qty_tank = st.number_input("穩定液池 (座)", value=8)
-                qty_pave = st.number_input("鋪面 (M²)", value=1220)
-                qty_wash = st.number_input("洗車台 (座)", value=2)
+                # [v6.81] 預設值全部歸零
+                qty_pile_temp = st.number_input("擋土假設樁 (M)", value=0.0)
+                qty_gw_norm = st.number_input("2.0M 一般導溝 (M)", value=0.0)
+                qty_gw_deep = st.number_input("7.0M 超深導溝 (M)", value=0.0)
+                qty_gw_pile = st.number_input("壁樁超深導溝 (處)", value=0)
+                qty_tank = st.number_input("穩定液池 (座)", value=0)
+                qty_pave = st.number_input("鋪面 (M²)", value=0.0)
+                qty_wash = st.number_input("洗車台 (座)", value=0)
                 
                 st.markdown("---")
                 st.caption("壁體單元數量")
-                qty_dw_main = st.number_input("連續壁主體 (單元)", value=25)
-                qty_dw_co = st.number_input("連續壁共構樁 (單元)", value=6)
-                qty_buttress = st.number_input("無筋扶壁 (單元)", value=4)
-                qty_mid_wall = st.number_input("地中壁 (單元)", value=7)
-                qty_rect_pile = st.number_input("矩形壁樁 (單元)", value=10)
+                qty_dw_main = st.number_input("連續壁主體 (單元)", value=0)
+                qty_dw_co = st.number_input("連續壁共構樁 (單元)", value=0)
+                qty_buttress = st.number_input("無筋扶壁 (單元)", value=0)
+                qty_mid_wall = st.number_input("地中壁 (單元)", value=0)
+                qty_rect_pile = st.number_input("矩形壁樁 (單元)", value=0)
                 
                 default_bf = int(floors_down) if floors_down > 0 else 4
                 basement_floors_calc = st.number_input("結構體養護-地下室層數", value=default_bf, min_value=1)
@@ -358,19 +359,21 @@ with st.expander("點擊展開/隱藏 一般參數面板", expanded=True):
                     {"項目": "7.0M 超深導溝", "數量": qty_gw_deep, "單位": "M", "工率": "1 M/天 (5M/5天)", "工作天": math.ceil(qty_gw_deep/1)},
                     {"項目": "壁樁超深導溝", "數量": qty_gw_pile, "單位": "處", "工率": "5 天/處", "工作天": math.ceil(qty_gw_pile * 5)},
                     {"項目": "穩定液池", "數量": qty_tank, "單位": "座", "工率": "1 天/座", "工作天": math.ceil(qty_tank * 1)},
-                    {"項目": "鋪面", "數量": qty_pave, "單位": "M²", "工率": "固定工期", "工作天": 8},
+                    {"項目": "鋪面", "數量": qty_pave, "單位": "M²", "工率": "固定工期", "工作天": 8 if qty_pave > 0 else 0},
                     {"項目": "洗車台", "數量": qty_wash, "單位": "座", "工率": "2 天/座", "工作天": math.ceil(qty_wash * 2)},
-                    {"項目": "機具組裝試挖", "數量": 1, "單位": "式", "工率": "固定", "工作天": 2},
+                    {"項目": "機具組裝試挖", "數量": 1 if qty_dw_main > 0 else 0, "單位": "式", "工率": "固定", "工作天": 2 if qty_dw_main > 0 else 0},
                     {"項目": "連續壁主體", "數量": qty_dw_main, "單位": "單元", "工率": "3 天/單元", "工作天": math.ceil(qty_dw_main * 3)},
                     {"項目": "連續壁共構樁", "數量": qty_dw_co, "單位": "單元", "工率": "4 天/單元", "工作天": math.ceil(qty_dw_co * 4)},
                     {"項目": "無筋扶壁", "數量": qty_buttress, "單位": "單元", "工率": "1 天/單元", "工作天": math.ceil(qty_buttress * 1)},
                     {"項目": "地中壁", "數量": qty_mid_wall, "單位": "單元", "工率": "1 天/單元", "工作天": math.ceil(qty_mid_wall * 1)},
                     {"項目": "矩形壁樁", "數量": qty_rect_pile, "單位": "單元", "工率": "4 天/單元", "工作天": math.ceil(qty_rect_pile * 4)},
-                    {"項目": "退場", "數量": 1, "單位": "式", "工率": "固定", "工作天": 2},
+                    {"項目": "退場", "數量": 1 if qty_dw_main > 0 else 0, "單位": "式", "工率": "固定", "工作天": 2 if qty_dw_main > 0 else 0},
                 ]
                 
                 df_schedule_dw = pd.DataFrame(schedule_dw_data)
-                st.dataframe(df_schedule_dw, use_container_width=True, hide_index=True)
+                # 過濾掉數量為 0 的項目，讓表格乾淨
+                df_display = df_schedule_dw[df_schedule_dw['數量'] > 0] if not df_schedule_dw[df_schedule_dw['數量'] > 0].empty else pd.DataFrame(columns=["項目", "數量", "單位", "工率", "工作天"])
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
                 
                 raw_work_days_dw = df_schedule_dw["工作天"].sum()
                 
@@ -416,7 +419,7 @@ with st.expander("🔧 進階：廠商工期覆蓋 (選填/點擊展開)", expan
             manual_crane_days = st.number_input("塔吊/鋼構吊裝工期 (天)", min_value=0, help="覆蓋系統計算")
 
 # ==========================================
-# [v6.80] 變數初始化 (必備)
+# [v6.81] 變數初始化 (必備)
 # ==========================================
 d_dw_setup = 0
 d_demo = 0
