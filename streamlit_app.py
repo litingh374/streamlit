@@ -9,7 +9,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.82", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.83", layout="wide")
 
 # --- 2. CSS 樣式 ---
 st.markdown("""
@@ -30,8 +30,11 @@ st.markdown("""
         font-size: 18px; font-weight: bold; color: #2D2926; 
         border-bottom: 2px solid #FFB81C; padding-bottom: 5px; margin-bottom: 15px; margin-top: 20px;
     }
-    .adv-header {
-        color: #856404; font-weight: bold; font-size: 16px; margin-bottom: 10px; border-bottom: 1px solid #ffeeba; padding-bottom: 5px;
+    .warning-box {
+        background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 5px; color: #856404; margin: 10px 0;
+    }
+    .info-box {
+        background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; color: #0c5460; margin: 10px 0;
     }
     div[data-testid="stDataEditor"] { border: 1px solid #ddd; border-radius: 5px; margin-top: 5px; }
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -5px; }
@@ -42,11 +45,11 @@ st.markdown("""
 st.sidebar.title("功能選單")
 page_mode = st.sidebar.radio("請選擇模式", ["單案詳細估算", "順打 vs 逆打 比較"], index=0)
 
-st.title(f"🏗️ 建築工期估算 - {page_mode} v6.82")
+st.title(f"🏗️ 建築工期估算 - {page_mode} v6.83")
 if page_mode == "順打 vs 逆打 比較":
     st.caption("說明：此模式將忽略上方「施工方式」選單，自動計算並比較兩種工法的差異。")
 else:
-    st.caption("參數更新：新增工法比較頁面 (v6.82)")
+    st.caption("參數更新：恢復風險提示與甘特圖配色 (v6.83)")
 
 project_name = st.text_input("📝 請輸入專案名稱", value="", placeholder="例如：信義區A案")
 
@@ -326,6 +329,41 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
 # ==========================================
+# [v6.83 恢復] 危評/外審 警告判斷邏輯
+# ==========================================
+risk_reasons = []
+suggested_days = 0
+
+if manual_excav_depth_m > 0:
+    check_depth = manual_excav_depth_m
+elif is_complex_excavation:
+    check_depth = max_depth_complex
+else:
+    check_depth = floors_down * 3.5
+
+check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
+
+if check_height >= 50:
+    risk_reasons.append(f"📏 建物高度達 {check_height:.1f}m (≥50m 需結構外審)")
+    suggested_days = 90
+if check_height >= 80:
+    risk_reasons.append(f"🏗 建物高度達 {check_height:.1f}m (≥80m 需丁類危評)")
+    suggested_days = 120
+if check_depth >= 15:
+    risk_reasons.append(f"⛏️ 開挖深度達 {check_depth:.1f}m (≥15m 需丁類危評)")
+    if suggested_days < 120:
+        suggested_days = max(suggested_days, 60)
+        if suggested_days == 90 and "結構外審" in str(risk_reasons):
+                suggested_days = 120
+                
+if risk_reasons:
+    reasons_str = "<br>".join([f"• {m}" for m in risk_reasons])
+    if not enable_manual_review:
+        st.markdown(f"""<div class='warning-box'><b>⚠️ 系統建議：</b>偵測到本案符合以下條件：<br>{reasons_str}<br><hr style="margin:5px 0; border-top:1px dashed #bba55a;">建議至「3. 基地現況」區塊勾選「納入危評/外審緩衝期」，預估需增加 <b>{suggested_days} 天</b>。</div>""", unsafe_allow_html=True)
+    else:
+        st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br>已加入 <b>{manual_review_days_input} 天</b>。</div>""", unsafe_allow_html=True)
+
+# ==========================================
 #  核心計算邏輯 (封裝為函數)
 # ==========================================
 def calculate_project_schedule(is_reverse_method):
@@ -392,7 +430,7 @@ def calculate_project_schedule(is_reverse_method):
     d_aux_wall_days = int(60 * aux_wall_factor)
     d_dw_setup = 0 # 簡化
     
-    # 擋土壁工期 (核心修正)
+    # 擋土壁工期
     if selected_wall and "連續壁" in selected_wall:
         base_retain = int(60 * dw_reality_factor) # 105天
     elif selected_wall and "全套管" in selected_wall: base_retain = 50
@@ -683,7 +721,13 @@ else:
     st.dataframe(sched_df[["工項", "天數", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
 
     st.subheader("📊 專案進度甘特圖")
-    fig = px.timeline(sched_df, x_start="Start", x_end="Finish", y="工項", color="工項", title=f"【{project_name}】工程進度模擬")
+    # [v6.83] Restore professional colors
+    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#696969", "#708090", "#A0522D", "#DC143C", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#556B2F", "#DAA520"]
+    fig = px.timeline(
+        sched_df, x_start="Start", x_end="Finish", y="工項", color="工項", 
+        title=f"【{project_name}】工程進度模擬",
+        color_discrete_sequence=professional_colors
+    )
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
     
