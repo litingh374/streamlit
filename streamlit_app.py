@@ -10,7 +10,7 @@ import math
 import sqlite3
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.91", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.92", layout="wide")
 
 # ==========================================
 # 💾 資料庫管理模組 (SQLite) - v2
@@ -41,7 +41,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# 雖然移除按鈕，但保留函數以免報錯或未來需要
+# 保留函數以免報錯
 def save_to_db(data_dict):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -191,8 +191,8 @@ if page_mode == "🗄️ 歷史專案資料庫":
 # ==========================================
 # 主計算頁面 (參數輸入)
 # ==========================================
-st.title(f"🏗️ 建築工期估算 - {page_mode} v6.91")
-st.caption("調整：移除儲存按鈕 (v6.91)")
+st.title(f"🏗️ 建築工期估算 - {page_mode} v6.92")
+st.caption("視覺優化：莫蘭迪色系甘特圖 (v6.92)")
 
 # 基本資料
 st.subheader("📝 基本標案資料")
@@ -832,6 +832,8 @@ else:
         st.markdown(f"<div class='metric-container' style='border-left-color:{c_color};'><small>預計完工日期</small><br><b style='color:{c_color};'>{d_str}</b></div>", unsafe_allow_html=True)
     with res_col4: st.markdown(f"<div class='metric-container'><small>規模複雜度分析</small><br><b>單棟標準係數</b></div>", unsafe_allow_html=True)
 
+    # [v6.91] Removed Save Button here
+
     st.subheader("📅 詳細工項進度建議表")
     sched_df = pd.DataFrame(s_data)
     sched_df = sched_df[sched_df["天數"] > 0].sort_values("Start")
@@ -840,11 +842,12 @@ else:
     st.dataframe(sched_df[["工項", "天數", "預計開始", "預計完成", "備註"]], hide_index=True, use_container_width=True)
 
     st.subheader("📊 專案進度甘特圖")
-    professional_colors = ["#708090", "#A52A2A", "#8B4513", "#2F4F4F", "#696969", "#708090", "#A0522D", "#DC143C", "#4682B4", "#CD5C5C", "#5F9EA0", "#2E8B57", "#556B2F", "#DAA520"]
+    # [v6.92] Morandi Colors
+    morandi_colors = ["#8E9EAB", "#D4A5A5", "#96B3C2", "#B9C0C9", "#E0C9A6", "#A9B7C0", "#C4B7D7", "#8FA691", "#D9B48F", "#BFD7D1", "#E3D0B9", "#99A8A5", "#D6C6B0", "#B0A3D2", "#ABC3C5"]
     fig = px.timeline(
         sched_df, x_start="Start", x_end="Finish", y="工項", color="工項", text="工項",
         title=f"【{project_name}】工程進度模擬",
-        color_discrete_sequence=professional_colors
+        color_discrete_sequence=morandi_colors
     )
     fig.update_traces(textposition='inside', insidetextanchor='start', opacity=0.9)
     fig.update_yaxes(autorange="reversed")
