@@ -10,7 +10,7 @@ import math
 import sqlite3
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v6.90", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v6.91", layout="wide")
 
 # ==========================================
 # 💾 資料庫管理模組 (SQLite) - v2
@@ -41,8 +41,8 @@ def init_db():
     conn.commit()
     conn.close()
 
+# 雖然移除按鈕，但保留函數以免報錯或未來需要
 def save_to_db(data_dict):
-    """儲存資料"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('''
@@ -185,14 +185,14 @@ if page_mode == "🗄️ 歷史專案資料庫":
                     st.success("已刪除！")
                     st.rerun()
     else:
-        st.info("尚無歷史資料，請先至計算頁面儲存。")
+        st.info("尚無歷史資料。")
     st.stop()
 
 # ==========================================
 # 主計算頁面 (參數輸入)
 # ==========================================
-st.title(f"🏗️ 建築工期估算 - {page_mode} v6.90")
-st.caption("修復版：修正 SyntaxError 及 NameError (v6.90)")
+st.title(f"🏗️ 建築工期估算 - {page_mode} v6.91")
+st.caption("調整：移除儲存按鈕 (v6.91)")
 
 # 基本資料
 st.subheader("📝 基本標案資料")
@@ -485,23 +485,12 @@ with st.expander("點擊展開/隱藏 日期設定"):
         with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True)
         with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True)
 
-# ==========================================
-# 核心風險提示 (修正 NameError: 確保所有變數都已經定義後才檢查)
-# ==========================================
+# 風險提示
 risk_reasons = []
 suggested_days = 0
-
-# 確保變數存在，避免 NoneType 錯誤
-check_depth = 0
-check_height = 0
-
-if manual_excav_depth_m > 0: 
-    check_depth = manual_excav_depth_m
-elif is_complex_excavation: 
-    check_depth = max_depth_complex
-else: 
-    check_depth = floors_down * 3.5
-
+if manual_excav_depth_m > 0: check_depth = manual_excav_depth_m
+elif is_complex_excavation: check_depth = max_depth_complex
+else: check_depth = floors_down * 3.5
 check_height = manual_height_m if manual_height_m > 0 else (display_max_floor * 3.3)
 
 if check_height >= 50:
@@ -516,7 +505,6 @@ if check_depth >= 15:
         suggested_days = max(suggested_days, 60)
         if suggested_days == 90 and "結構外審" in str(risk_reasons):
                 suggested_days = 120
-                
 if risk_reasons:
     reasons_str = "<br>".join([f"• {m}" for m in risk_reasons])
     if not enable_manual_review:
@@ -524,31 +512,7 @@ if risk_reasons:
     else:
         st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br>已加入 <b>{manual_review_days_input} 天</b>。</div>""", unsafe_allow_html=True)
 
-# 核心防呆檢查
-missing_fields = []
-if not b_type: missing_fields.append("建物類型")
-if page_mode != "順打 vs 逆打 比較" and not b_method: missing_fields.append("施工方式")
-if not struct_above: missing_fields.append("地上結構")
-if not struct_below: missing_fields.append("地下結構")
-if not site_condition: missing_fields.append("基地現況")
-if not soil_improvement: missing_fields.append("地質改良")
-if not prep_type_select: missing_fields.append("前置作業類型")
-if not selected_wall: missing_fields.append("擋土壁體類型")
-if not selected_support: missing_fields.append("支撐/開挖方式")
-if not foundation_type: missing_fields.append("基礎型式")
-if not ext_wall: missing_fields.append("外牆型式")
-
-has_numeric_data = (base_area_m2 > 0) and (total_fa_m2 > 0) and (calc_floors_struct > 0 or floors_down > 0)
-
-if missing_fields or not has_numeric_data:
-    st.divider()
-    if missing_fields: st.error(f"❌ 請補全資料： {', '.join(missing_fields)}")
-    if not has_numeric_data: st.warning("👈 請輸入 基地面積、總樓地板面積 及 樓層數")
-    st.stop()
-
-# ==========================================
-#  核心計算邏輯
-# ==========================================
+# 核心運算
 def calculate_project_schedule(is_reverse_method):
     base_area_factor = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
     vol_factor = 1.0
@@ -575,13 +539,8 @@ def calculate_project_schedule(is_reverse_method):
     if "扶壁" in str(rw_aux_options): aux_wall_factor += 0.10
 
     add_review_days = manual_review_days_input if enable_manual_review else 0
-    
-    # [Fix SyntaxError Here]
-    if prep_type_select and "自訂" in prep_type_select and prep_days_custom is not None: 
-        d_prep_base = int(prep_days_custom)
-    else: 
-        d_prep_base = 120 if "一般" in str(prep_type_select) else 210 if "鄰捷運" in str(prep_type_select) else 300
-    
+    if prep_type_select and "自訂" in prep_type_select and prep_days_custom is not None: d_prep_base = int(prep_days_custom)
+    else: d_prep_base = 120 if "一般" in str(prep_type_select) else 210 if "鄰捷運" in str(prep_type_select) else 300
     d_prep = d_prep_base + add_review_days
     prep_note = f"含危評 (+{add_review_days}天)" if add_review_days > 0 else "要徑"
 
@@ -618,7 +577,7 @@ def calculate_project_schedule(is_reverse_method):
     d_aux_wall_days = int(60 * aux_wall_factor)
     d_dw_setup = 0 
     dw_note_str = ""
-    
+    # [v6.89] 修正 Base Retain Logic
     if selected_wall and "連續壁" in selected_wall:
         base_retain = int(60 * dw_reality_factor)
         dw_note_str = "連續壁(含係數)"
@@ -872,26 +831,6 @@ else:
         d_str = str(final_date) if enable_date else "日期未定"
         st.markdown(f"<div class='metric-container' style='border-left-color:{c_color};'><small>預計完工日期</small><br><b style='color:{c_color};'>{d_str}</b></div>", unsafe_allow_html=True)
     with res_col4: st.markdown(f"<div class='metric-container'><small>規模複雜度分析</small><br><b>單棟標準係數</b></div>", unsafe_allow_html=True)
-
-    if st.button("💾 儲存計算結果至資料庫"):
-        if project_name:
-            data_to_save = {
-                'project_name': project_name,
-                'location': project_location,
-                'design_unit': design_unit,
-                'b_type': str(b_type),
-                'struct_above': str(struct_above),
-                'base_area': base_area_m2,
-                'floors_up': display_max_floor,
-                'floors_down': floors_down,
-                'total_cal_days': cal_days,
-                'final_finish_date': str(final_date),
-                'note': f"{b_method}"
-            }
-            save_to_db(data_to_save)
-            st.success(f"✅ 已成功儲存專案：{project_name}")
-        else:
-            st.error("❌ 請先輸入「工程名稱」才能儲存")
 
     st.subheader("📅 詳細工項進度建議表")
     sched_df = pd.DataFrame(s_data)
