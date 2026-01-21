@@ -5,8 +5,8 @@ import pandas as pd
 import plotly.express as px 
 import math
 
-# --- 1. 頁面配置 (極簡化) ---
-st.set_page_config(page_title="工期估算 (快速版) v7.2", layout="centered")
+# --- 1. 頁面配置 ---
+st.set_page_config(page_title="工期估算 (快速版) v7.3", layout="centered")
 
 # CSS 美化
 st.markdown("""
@@ -24,8 +24,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("⚡ 建築工期快速估算 v7.2")
-st.caption("修復版：修正 NameError (v7.2)")
+st.title("⚡ 建築工期快速估算 v7.3")
+st.caption("正名更新：逆打鋼柱 (v7.3)")
 
 # ==========================================
 # 1. 輸入區
@@ -76,6 +76,7 @@ if run_calc:
     base_retain = int(60 * 1.75) if wall_type == "連續壁" else 30
     d_retain = int(base_retain * area_multiplier)
     
+    # [v7.3] 顯示名稱邏輯：逆打才算這筆
     d_plunge = int(45 * area_multiplier) if method_type == "逆打工法" else 0
     
     total_soil = base_area_m2 * (floors_down * 3.5)
@@ -89,7 +90,6 @@ if run_calc:
     
     d_struct_up = int(floors_up * days_per_floor * area_multiplier * k_usage)
     
-    # 修正變數名稱定義
     d_ext_wall = int(floors_up * 15 * area_multiplier)
     d_fit_out_buffer = 90 
     
@@ -110,7 +110,8 @@ if run_calc:
     current_day += d_retain
     
     if method_type == "逆打工法":
-        schedule.append(dict(Task="逆打中間柱", Start=current_day, Duration=d_plunge))
+        # [v7.3] 正名為「逆打鋼柱」
+        schedule.append(dict(Task="逆打鋼柱", Start=current_day, Duration=d_plunge))
         current_day += d_plunge
         
         d_1f_slab = int(60 * area_multiplier)
@@ -137,11 +138,9 @@ if run_calc:
         finish_struct_up = current_day + d_struct_up
         finish_down = current_day
 
-    # 收尾
     start_struct_up = finish_struct_up - d_struct_up
     start_ext = start_struct_up + int(d_struct_up * 0.7)
     
-    # 修正：使用正確的變數 d_ext_wall
     finish_ext = start_ext + d_ext_wall
     
     finish_fitout = finish_ext + d_fit_out_buffer
@@ -174,7 +173,8 @@ if run_calc:
     
     wall_info = f"{wall_type} (自動推算)"
     if method_type == "逆打工法":
-        wall_info += " + 中間柱"
+        # [v7.3] 提示更新
+        wall_info += " + 逆打鋼柱"
         
     st.info(f"""
     💡 **運算依據：**
@@ -192,6 +192,7 @@ if run_calc:
     df_chart['Start_Date'] = df_chart['Start'].apply(lambda x: start_date + timedelta(days=x))
     df_chart['Finish_Date'] = df_chart['Finish'].apply(lambda x: start_date + timedelta(days=x))
     
+    # 莫蘭迪配色
     morandi_colors = ["#8E9EAB", "#D4A5A5", "#96B3C2", "#B9C0C9", "#E0C9A6", "#A9B7C0", "#C4B7D7", "#8FA691"]
     
     fig = px.timeline(
@@ -200,9 +201,11 @@ if run_calc:
         x_end="Finish_Date", 
         y="Task", 
         color="Task",
+        text="Task", # 顯示文字
         color_discrete_sequence=morandi_colors,
         height=450
     )
+    fig.update_traces(textposition='inside', insidetextanchor='start', opacity=0.9)
     fig.update_yaxes(autorange="reversed", title="")
     fig.update_xaxes(title="日期")
     st.plotly_chart(fig, use_container_width=True)
