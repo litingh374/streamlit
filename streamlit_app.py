@@ -6,7 +6,7 @@ import plotly.express as px
 import math
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="工期估算 (快速版) v7.3", layout="centered")
+st.set_page_config(page_title="工期估算 (快速版) v7.4", layout="centered")
 
 # CSS 美化
 st.markdown("""
@@ -16,6 +16,7 @@ st.markdown("""
     .result-card {
         background-color: white; padding: 20px; border-radius: 15px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; margin-top: 20px;
+        border: 2px solid #e0e0e0;
     }
     .stButton>button {
         width: 100%; border-radius: 10px; height: 3em; font-size: 18px; font-weight: bold;
@@ -24,8 +25,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("⚡ 建築工期快速估算 v7.3")
-st.caption("正名更新：逆打鋼柱 (v7.3)")
+st.title("⚡ 建築工期快速估算 v7.4")
+st.caption("設定更新：僅計算純工作天 (v7.4)")
 
 # ==========================================
 # 1. 輸入區
@@ -52,6 +53,7 @@ with st.container():
 # 2. 核心運算引擎
 # ==========================================
 if run_calc:
+    # --- 參數推算 ---
     base_area_m2 = base_area_ping / 0.3025
     est_total_fa_ping = base_area_ping * 0.65 * (floors_up + floors_down) * 1.4
     
@@ -67,16 +69,14 @@ if run_calc:
     k_usage = 1.1 if b_type in ["辦公大樓", "飯店"] else 1.0
     if b_type == "廠房": k_usage = 0.8
 
-    # --- B. 分項工期計算 ---
+    # --- 工項計算 (純工作天) ---
     
     d_prep = 120 
-    
     d_demo = int(60 * area_multiplier) if has_old_building else 0
     
     base_retain = int(60 * 1.75) if wall_type == "連續壁" else 30
     d_retain = int(base_retain * area_multiplier)
     
-    # [v7.3] 顯示名稱邏輯：逆打才算這筆
     d_plunge = int(45 * area_multiplier) if method_type == "逆打工法" else 0
     
     total_soil = base_area_m2 * (floors_down * 3.5)
@@ -95,7 +95,7 @@ if run_calc:
     
     d_insp = 120
 
-    # --- C. 排程模擬 ---
+    # --- 排程模擬 ---
     current_day = 0
     schedule = []
     
@@ -110,7 +110,6 @@ if run_calc:
     current_day += d_retain
     
     if method_type == "逆打工法":
-        # [v7.3] 正名為「逆打鋼柱」
         schedule.append(dict(Task="逆打鋼柱", Start=current_day, Duration=d_plunge))
         current_day += d_plunge
         
@@ -138,9 +137,9 @@ if run_calc:
         finish_struct_up = current_day + d_struct_up
         finish_down = current_day
 
+    # 收尾
     start_struct_up = finish_struct_up - d_struct_up
     start_ext = start_struct_up + int(d_struct_up * 0.7)
-    
     finish_ext = start_ext + d_ext_wall
     
     finish_fitout = finish_ext + d_fit_out_buffer
@@ -155,8 +154,8 @@ if run_calc:
     
     total_days = project_finish + d_insp
     
-    final_calendar_days = int(total_days * 1.15)
-    final_years = round(final_calendar_days / 365, 1)
+    # [v7.4 修改] 不再乘以 1.15，直接顯示純工作天
+    final_working_days = total_days
     
     # ==========================================
     # 3. 結果顯示區
@@ -165,15 +164,14 @@ if run_calc:
     
     st.markdown(f"""
     <div class='result-card'>
-        <h3 style='color:#888; margin:0;'>預估總工期 ({method_type})</h3>
-        <h1 style='color:#2D2926; font-size: 60px; margin: 10px 0;'>{final_calendar_days} 天</h1>
-        <p style='color:#FF4438; font-weight:bold; font-size: 20px;'>約 {final_years} 年</p>
+        <h3 style='color:#888; margin:0;'>預估總工期 (純工作天)</h3>
+        <h1 style='color:#2D2926; font-size: 60px; margin: 10px 0;'>{final_working_days} 天</h1>
+        <p style='color:#FF4438; font-weight:bold; font-size: 16px;'>不含例假日與天候因素</p>
     </div>
     """, unsafe_allow_html=True)
     
     wall_info = f"{wall_type} (自動推算)"
     if method_type == "逆打工法":
-        # [v7.3] 提示更新
         wall_info += " + 逆打鋼柱"
         
     st.info(f"""
@@ -181,18 +179,18 @@ if run_calc:
     - **結構設定**：{struct_above} ({days_per_floor}天/層)
     - **擋土工法**：{wall_info}
     - **總樓地板**：約 {int(est_total_fa_ping):,} 坪 (自動推算)
-    - **工期損耗**：已包含連續壁實務係數、天候放假係數
+    - **工期性質**：本結果為「純工作天」，未包含國定假日、週休二日及天候影響。
     """)
 
-    st.subheader("📅 工期進度條")
+    st.subheader("📅 工期進度示意 (工作日累加)")
     df_chart = pd.DataFrame(schedule)
     df_chart['Finish'] = df_chart['Start'] + df_chart['Duration']
     
+    # 為了圖表顯示，這裡仍使用日期格式，但標題會註明是工作日序列
     start_date = datetime.date.today()
     df_chart['Start_Date'] = df_chart['Start'].apply(lambda x: start_date + timedelta(days=x))
     df_chart['Finish_Date'] = df_chart['Finish'].apply(lambda x: start_date + timedelta(days=x))
     
-    # 莫蘭迪配色
     morandi_colors = ["#8E9EAB", "#D4A5A5", "#96B3C2", "#B9C0C9", "#E0C9A6", "#A9B7C0", "#C4B7D7", "#8FA691"]
     
     fig = px.timeline(
@@ -201,13 +199,13 @@ if run_calc:
         x_end="Finish_Date", 
         y="Task", 
         color="Task",
-        text="Task", # 顯示文字
+        text="Duration", # 直接在圖上顯示天數
         color_discrete_sequence=morandi_colors,
         height=450
     )
-    fig.update_traces(textposition='inside', insidetextanchor='start', opacity=0.9)
+    fig.update_traces(texttemplate='%{text} 天', textposition='inside', insidetextanchor='middle')
     fig.update_yaxes(autorange="reversed", title="")
-    fig.update_xaxes(title="日期")
+    fig.update_xaxes(title="工作日序 (假設今日開工連續施作)")
     st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("查看詳細工期拆解"):
