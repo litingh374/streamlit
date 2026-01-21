@@ -10,7 +10,7 @@ import math
 import sqlite3
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v8.0", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v8.1", layout="wide")
 
 # ==========================================
 # 💾 資料庫管理模組 (SQLite)
@@ -121,7 +121,6 @@ if st.sidebar.button("🔒 登出系統"):
     st.rerun()
 
 st.sidebar.markdown("---")
-# 頂層模式選擇
 system_mode = st.sidebar.radio(
     "📱 請選擇系統模式", 
     ["完整專業版 (Pro)", "快速估算版 (Lite)", "歷史資料庫"],
@@ -136,7 +135,6 @@ morandi_colors = ["#8E9EAB", "#D4A5A5", "#96B3C2", "#B9C0C9", "#E0C9A6", "#A9B7C
 # MODE 1: 完整專業版 (Pro)
 # ==========================================
 if system_mode == "完整專業版 (Pro)":
-    # Pro 的次級選單
     pro_mode = st.sidebar.radio("└─ Pro 功能", ["單案詳細估算", "順打 vs 逆打 比較"], index=0)
     
     st.title(f"🏗️ 建築工期估算 - {pro_mode}")
@@ -226,6 +224,7 @@ if system_mode == "完整專業版 (Pro)":
                 if toggle_state:
                     floors_down_input = st.number_input("加權平均層數 (B)", value=0.0, disabled=True, key="pro_fd_dis")
                 else:
+                    # [v6.88] Step=1.0
                     floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=0.0, step=1.0, key="pro_fd")
                     floors_down = floors_down_input
                 st.checkbox("啟用分區開挖 (深淺不一)", key="complex_toggle_single")
@@ -316,9 +315,18 @@ if system_mode == "完整專業版 (Pro)":
         with g1:
             wall_type_options = ["連續壁 (Diaphragm Wall)", "全套管切削樁 (All-Casing)", "預壘樁/排樁 (PIP/Soldier Pile)", "鋼板樁 (Sheet Pile)", "鋼軌樁 (H-Pile)", "無 (純明挖/放坡)"]
             selected_wall = st.selectbox("A. 擋土壁體類型", wall_type_options, index=None, placeholder="請選擇...", key="pro_wall")
+            
+            # [v8.1] 連動邏輯：逆打時自動跳選「結構樓板」，並透過 key 動態刷新
+            support_idx = 0
+            if b_method and "逆打" in b_method:
+                support_idx = 4 # 結構樓板
+                
             support_type_options = ["型鋼內支撐 (Strut)", "地錨 (Anchor)", "島式工法 (Island Method)", "斜坡/明挖 (Slope/Open Cut)", "結構樓板 (逆打標準)"]
-            default_idx = 4 if (b_method and "逆打" in b_method) else None
-            selected_support = st.selectbox("B. 支撐/開挖方式", support_type_options, index=default_idx, placeholder="請選擇...", key="pro_supp")
+            
+            # 使用動態 Key 強制 Streamlit 重新渲染元件
+            dynamic_key = f"pro_supp_{b_method}" 
+            selected_support = st.selectbox("B. 支撐/開挖方式", support_type_options, index=support_idx, key=dynamic_key)
+            
             excavation_system = f"{selected_wall} + {selected_support}" if (selected_wall and selected_support) else "未選擇"
             
             wall_factors = {"連續壁 (Diaphragm Wall)": 1.0, "全套管切削樁 (All-Casing)": 0.95, "預壘樁/排樁 (PIP/Soldier Pile)": 0.85, "鋼板樁 (Sheet Pile)": 0.70, "鋼軌樁 (H-Pile)": 0.75, "無 (純明挖/放坡)": 0.50}
@@ -712,7 +720,8 @@ elif system_mode == "快速估算版 (Lite)":
             floors_down_lite = st.number_input("⛏️ 地下樓層 (B)", min_value=0, value=3, step=1, key="lite_fd")
             struct_above_lite = st.selectbox("🏗️ 結構型式", ["RC造", "SRC造", "SS造", "SC造"], index=0, key="lite_st")
         with col2:
-            base_area_ping_lite = st.number_input("📐 基地大小 (坪)", min_value=10.0, value=300.0, step=10.0, key="lite_area")
+            # [v8.1] Change Ping to M2
+            base_area_m2_lite = st.number_input("📐 基地大小 (m²)", min_value=10.0, value=1000.0, step=10.0, key="lite_area_m2")
             b_type_lite = st.selectbox("🏢 建物類型", ["住宅", "辦公大樓", "飯店", "廠房"], index=0, key="lite_type")
             method_type_lite = st.selectbox("⚙️ 施工方式", ["順打工法", "逆打工法"], index=0, key="lite_method")
 
@@ -721,7 +730,7 @@ elif system_mode == "快速估算版 (Lite)":
         run_calc_lite = st.button("🚀 開始計算", key="lite_btn")
 
     if run_calc_lite:
-        base_area_m2_lite = base_area_ping_lite / 0.3025
+        base_area_ping_lite = base_area_m2_lite * 0.3025
         est_total_fa_ping = base_area_ping_lite * 0.65 * (floors_up_lite + floors_down_lite) * 1.4
         base_area_factor = max(0.8, min(1 + ((base_area_ping_lite - 500) / 100) * 0.02, 1.5))
         vol_factor = min(1 + ((est_total_fa_ping - 3000) / 5000) * 0.05, 1.2) if est_total_fa_ping > 3000 else 1.0
