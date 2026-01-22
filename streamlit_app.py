@@ -10,10 +10,10 @@ import math
 import sqlite3
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="建築工期估算系統 v8.1", layout="wide")
+st.set_page_config(page_title="建築工期估算系統 v8.2", layout="wide")
 
 # ==========================================
-# 💾 資料庫管理模組 (SQLite)
+# 💾 資料庫管理模組
 # ==========================================
 DB_NAME = "construction_history_v2.db"
 
@@ -84,7 +84,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- CSS (整合版) ---
+# --- CSS ---
 st.markdown("""
     <style>
     :root { --main-yellow: #FFB81C; --accent-orange: #FF4438; --dark-grey: #2D2926; }
@@ -113,7 +113,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 📌 系統導航 (Sidebar)
+# 📌 系統導航
 # ==========================================
 st.sidebar.title("功能選單")
 if st.sidebar.button("🔒 登出系統"):
@@ -224,7 +224,6 @@ if system_mode == "完整專業版 (Pro)":
                 if toggle_state:
                     floors_down_input = st.number_input("加權平均層數 (B)", value=0.0, disabled=True, key="pro_fd_dis")
                 else:
-                    # [v6.88] Step=1.0
                     floors_down_input = st.number_input("地下層數 (B)", min_value=0.0, value=0.0, step=1.0, key="pro_fd")
                     floors_down = floors_down_input
                 st.checkbox("啟用分區開挖 (深淺不一)", key="complex_toggle_single")
@@ -316,14 +315,13 @@ if system_mode == "完整專業版 (Pro)":
             wall_type_options = ["連續壁 (Diaphragm Wall)", "全套管切削樁 (All-Casing)", "預壘樁/排樁 (PIP/Soldier Pile)", "鋼板樁 (Sheet Pile)", "鋼軌樁 (H-Pile)", "無 (純明挖/放坡)"]
             selected_wall = st.selectbox("A. 擋土壁體類型", wall_type_options, index=None, placeholder="請選擇...", key="pro_wall")
             
-            # [v8.1] 連動邏輯：逆打時自動跳選「結構樓板」，並透過 key 動態刷新
+            # 連動邏輯：逆打時自動跳選「結構樓板」
             support_idx = 0
-            if b_method and "逆打" in b_method:
-                support_idx = 4 # 結構樓板
-                
+            if b_method and "逆打" in b_method: support_idx = 4 
+            
             support_type_options = ["型鋼內支撐 (Strut)", "地錨 (Anchor)", "島式工法 (Island Method)", "斜坡/明挖 (Slope/Open Cut)", "結構樓板 (逆打標準)"]
             
-            # 使用動態 Key 強制 Streamlit 重新渲染元件
+            # 使用動態 Key 強制刷新
             dynamic_key = f"pro_supp_{b_method}" 
             selected_support = st.selectbox("B. 支撐/開挖方式", support_type_options, index=support_idx, key=dynamic_key)
             
@@ -376,7 +374,7 @@ if system_mode == "完整專業版 (Pro)":
             with corr_col2: exclude_sun = st.checkbox("排除週日 (不施工)", value=True, key="pro_no_sun")
             with corr_col3: exclude_cny = st.checkbox("扣除過年 (7天)", value=True, key="pro_no_cny")
 
-    # [Pro] 風險提示
+    # 風險提示
     risk_reasons = []
     suggested_days = 0
     check_depth = manual_excav_depth_m if manual_excav_depth_m > 0 else (max_depth_complex if is_complex_excavation else floors_down * 3.5)
@@ -394,13 +392,12 @@ if system_mode == "完整專業版 (Pro)":
         else:
             st.markdown(f"""<div class='info-box'><b>✅ 設定完成：</b>已針對以下條件納入緩衝期：<br>{reasons_str}<br>已加入 <b>{manual_review_days_input} 天</b>。</div>""", unsafe_allow_html=True)
 
-    # [Pro] 防呆
+    # 防呆
     missing_fields = []
     if not b_type: missing_fields.append("建物類型")
     if pro_mode != "順打 vs 逆打 比較" and not b_method: missing_fields.append("施工方式")
     if not struct_above: missing_fields.append("地上結構")
     if not struct_below: missing_fields.append("地下結構")
-    
     has_numeric_data = (base_area_m2 > 0) and (total_fa_m2 > 0) and (calc_floors_struct > 0 or floors_down > 0)
 
     if missing_fields or not has_numeric_data:
@@ -409,7 +406,7 @@ if system_mode == "完整專業版 (Pro)":
         if not has_numeric_data: st.warning("👈 請輸入 基地面積、總樓地板面積 及 樓層數")
         st.stop()
 
-    # [Pro] 核心運算函數
+    # 核心運算函數 (含詳細數據導出)
     def calculate_project_schedule_pro(is_reverse_method):
         base_area_factor = max(0.8, min(1 + ((base_area_ping - 500) / 100) * 0.02, 1.5))
         vol_factor = 1.0
@@ -527,7 +524,7 @@ if system_mode == "完整專業版 (Pro)":
         needs_tower_crane = (struct_above in ["SS造", "SC造", "SRC造"]) or (display_max_floor >= 15)
         if not needs_tower_crane: d_tower_crane = 0
 
-        # Timeline
+        # Timeline logic
         def get_end(start, days):
             curr = start
             if days <= 0: return curr
@@ -624,13 +621,22 @@ if system_mode == "完整專業版 (Pro)":
             {"工項": "13.驗收", "天數": d_insp, "Start": p13_s, "Finish": p13_e, "備註": insp_note},
         ]
         if needs_tower_crane: s_data.append({"工項": "7.5 塔吊", "天數": d_tower_crane, "Start": p_tower_s, "Finish": p_tower_e, "備註": crane_note})
-        return eff_days, cal_days, final_finish, s_data
+        
+        # [v8.2] Return key metrics for comparison table
+        key_metrics = {
+            'd_retain': d_retain_work,
+            'd_plunge': d_plunge_col,
+            'd_strut': d_strut_install,
+            'd_struct_down': d_struct_below
+        }
+        
+        return eff_days, cal_days, final_finish, s_data, key_metrics
 
     # [Pro] 顯示結果
     if pro_mode == "順打 vs 逆打 比較":
         st.subheader("📊 順打 vs 逆打 工期比較分析")
-        eff_std, cal_std, date_std, data_std = calculate_project_schedule_pro(is_reverse_method=False)
-        eff_rev, cal_rev, date_rev, data_rev = calculate_project_schedule_pro(is_reverse_method=True)
+        eff_std, cal_std, date_std, data_std, metrics_std = calculate_project_schedule_pro(is_reverse_method=False)
+        eff_rev, cal_rev, date_rev, data_rev, metrics_rev = calculate_project_schedule_pro(is_reverse_method=True)
         col_comp1, col_comp2, col_comp3 = st.columns(3)
         diff_days = cal_rev - cal_std
         with col_comp1:
@@ -645,14 +651,54 @@ if system_mode == "完整專業版 (Pro)":
             st.markdown("##### ⚖️ 工期差異")
             if diff_days > 0: st.metric("逆打比較慢", f"+{diff_days} 天", delta_color="inverse")
             else: st.metric("逆打比較快", f"{diff_days} 天", delta_color="normal")
+        
+        # [v8.2] 新增：關鍵工項差異分析表
+        st.subheader("⚔️ 關鍵工項差異分析")
+        
+        # 準備數據
+        diff_data = []
+        # 1. 擋土
+        d1 = metrics_std['d_retain']
+        d2 = metrics_rev['d_retain']
+        diff_data.append({"工項": "擋土設施", "順打天數": d1, "逆打天數": d2, "差異": d2-d1})
+        # 2. 鋼柱
+        d1 = metrics_std['d_plunge']
+        d2 = metrics_rev['d_plunge']
+        diff_data.append({"工項": "逆打鋼柱", "順打天數": d1, "逆打天數": d2, "差異": d2-d1})
+        # 3. 支撐
+        d1 = metrics_std['d_strut']
+        d2 = metrics_rev['d_strut']
+        diff_data.append({"工項": "支撐架設", "順打天數": d1, "逆打天數": d2, "差異": d2-d1})
+        # 4. 地下結構
+        d1 = metrics_std['d_struct_down']
+        d2 = metrics_rev['d_struct_down']
+        diff_data.append({"工項": "地下結構", "順打天數": d1, "逆打天數": d2, "差異": d2-d1})
+        
+        df_diff = pd.DataFrame(diff_data)
+        
+        # 格式化顯示函數
+        def format_diff(val):
+            if val > 0: return f"⏳ 逆打慢 {val} 天"
+            elif val < 0: return f"⚡ 逆打省 {abs(val)} 天"
+            else: return "無差異"
+
+        df_diff["差異分析"] = df_diff["差異"].apply(format_diff)
+        st.dataframe(df_diff[["工項", "順打天數", "逆打天數", "差異分析"]], use_container_width=True, hide_index=True)
+
         st.subheader("📅 完工日期時間軸對比")
         fig = go.Figure()
         fig.add_trace(go.Bar(y=['順打工法', '逆打工法'], x=[cal_std, cal_rev], orientation='h', marker=dict(color=['#708090', '#FFB81C']), text=[f"{cal_std}天", f"{cal_rev}天"], textposition='auto'))
         st.plotly_chart(fig, use_container_width=True)
         
+        with st.expander("查看完整工項比較表"):
+            df_std = pd.DataFrame(data_std)[['工項', '天數', 'Finish']].rename(columns={'天數':'順打天數', 'Finish':'順打完成'})
+            df_rev = pd.DataFrame(data_rev)[['天數', 'Finish']].rename(columns={'天數':'逆打天數', 'Finish':'逆打完成'})
+            df_merge = pd.concat([df_std, df_rev], axis=1)
+            st.dataframe(df_merge, use_container_width=True)
+        
     else: # 單案
         is_reverse = True if b_method and ("逆打" in b_method or "雙順打" in b_method) else False
-        eff_days, cal_days, final_date, s_data = calculate_project_schedule_pro(is_reverse)
+        eff_days, cal_days, final_date, s_data, _ = calculate_project_schedule_pro(is_reverse)
         st.subheader("📊 預估結果分析")
         res_col1, res_col2, res_col3, res_col4 = st.columns(4)
         with res_col1: st.markdown(f"<div class='metric-container'><small>專案總有效工期</small><br><b>{eff_days} 天</b></div>", unsafe_allow_html=True)
@@ -720,7 +766,6 @@ elif system_mode == "快速估算版 (Lite)":
             floors_down_lite = st.number_input("⛏️ 地下樓層 (B)", min_value=0, value=3, step=1, key="lite_fd")
             struct_above_lite = st.selectbox("🏗️ 結構型式", ["RC造", "SRC造", "SS造", "SC造"], index=0, key="lite_st")
         with col2:
-            # [v8.1] Change Ping to M2
             base_area_m2_lite = st.number_input("📐 基地大小 (m²)", min_value=10.0, value=1000.0, step=10.0, key="lite_area_m2")
             b_type_lite = st.selectbox("🏢 建物類型", ["住宅", "辦公大樓", "飯店", "廠房"], index=0, key="lite_type")
             method_type_lite = st.selectbox("⚙️ 施工方式", ["順打工法", "逆打工法"], index=0, key="lite_method")
